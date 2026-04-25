@@ -237,6 +237,8 @@ def build_voucher_xml(vouchers: list | None = None) -> str:
 
 from decimal import Decimal  # noqa: E402
 
+from werkzeug import Response  # noqa: E402
+
 
 def setup_mock_routes(httpserver) -> None:
     """Register all route handlers on the httpserver instance."""
@@ -244,7 +246,7 @@ def setup_mock_routes(httpserver) -> None:
     def _handler(request):
         if request.headers.get("X-Tally-Simulate-Error") == "true":
             body = "<ENVELOPE><BODY><DATA><LINEERROR>Company not loaded</LINEERROR></DATA></BODY></ENVELOPE>"
-            return body.encode("utf-16-le")
+            return Response(body.encode("utf-16-le"), content_type="text/xml;charset=utf-16")
 
         xml_body = request.data.decode("utf-8", errors="replace")
 
@@ -267,6 +269,6 @@ def setup_mock_routes(httpserver) -> None:
         else:
             resp_xml = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
 
-        return resp_xml.encode("utf-16-le")
+        return Response(resp_xml.encode("utf-16-le"), content_type="text/xml;charset=utf-16")
 
     httpserver.expect_request("/").respond_with_handler(_handler)

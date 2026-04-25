@@ -156,7 +156,7 @@
   commit: test: add mock Tally HTTP server with sample data
   ```
 
-- [ ] **connection.py** — Implement `src/tallybridge/connection.py`. Spec: SPECS.md §4. Write `tests/test_connection.py` using mock_tally.
+- [x] **connection.py** — Implement `src/tallybridge/connection.py`. Spec: SPECS.md §4. Write `tests/test_connection.py` using mock_tally.
   ```
   verify: uv run pytest tests/test_connection.py -v --cov=src/tallybridge/connection --cov-fail-under=90
   commit: feat(connection): add TallyConnection with retry and error handling
