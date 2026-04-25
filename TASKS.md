@@ -212,7 +212,7 @@
 
 ## Phase 5 — Integration and Public API
 
-- [ ] **__init__.py** — Implement the stable public API contract. Spec: SPECS.md §12. Include the `connect()` convenience function.
+- [x] **__init__.py** — Implement the stable public API contract. Spec: SPECS.md §12. Include the `connect()` convenience function.
   ```
   verify: uv run python -c "import tallybridge; print(tallybridge.__version__)"
   commit: feat: expose stable public API in __init__.py
