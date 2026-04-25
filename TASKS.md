@@ -135,7 +135,7 @@
 
 ## Phase 3 — Core Stack (implement in this order — each depends on the previous)
 
-- [ ] **mock_tally.py** — Write `tests/mock_tally.py`: a `pytest-httpserver`-based mock Tally server returning realistic XML for all entity types. Spec: SPECS.md §11a. This is not production code — it's a test helper, but it must be correct.
+- [x] **mock_tally.py** — Write `tests/mock_tally.py`: a `pytest-httpserver`-based mock Tally server returning realistic XML for all entity types. Spec: SPECS.md §11a. This is not production code — it's a test helper, but it must be correct.
   ```
   verify: uv run python -c "
   from tests.mock_tally import (
