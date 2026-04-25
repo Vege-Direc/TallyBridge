@@ -168,7 +168,7 @@
   commit: feat(parser): add XML parser with amount/date/bool helpers
   ```
 
-- [ ] **cache.py** — Implement `src/tallybridge/cache.py` with full DuckDB schema, all upsert methods, and migration system. Spec: SPECS.md §6. Write `tests/test_cache.py`.
+- [x] **cache.py** — Implement `src/tallybridge/cache.py` with full DuckDB schema, all upsert methods, and migration system. Spec: SPECS.md §6. Write `tests/test_cache.py`.
   ```
   verify: uv run pytest tests/test_cache.py -v --cov=src/tallybridge/cache --cov-fail-under=95
   commit: feat(cache): add DuckDB cache with schema, upserts, and migrations
