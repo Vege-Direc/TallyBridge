@@ -44,7 +44,7 @@
   commit: chore: scaffold complete directory and file tree with stubs
   ```
 
-- [ ] **0b · Dependencies and importability** — Run `uv sync --dev` and confirm every package in the `src/tallybridge` tree is importable. If any import fails, the stub file is missing its `__init__.py` or has a syntax error — fix it before continuing.
+- [x] **0b · Dependencies and importability** — Run `uv sync --dev` and confirm every package in the `src/tallybridge` tree is importable. If any import fails, the stub file is missing its `__init__.py` or has a syntax error — fix it before continuing.
   ```
   verify:
     uv sync --dev
