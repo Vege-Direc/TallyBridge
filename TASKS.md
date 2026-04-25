@@ -59,7 +59,7 @@
   commit: chore: confirm all packages importable with stub content
   ```
 
-- [ ] **0c · Tooling baseline** — Verify ruff, mypy, and pytest all run against the stubs without crashing. Stubs have no real code so there should be zero lint issues and zero type errors. Fix any tool configuration problems discovered here — it is far easier to fix them now than after real code exists.
+- [x] **0c · Tooling baseline** — Verify ruff, mypy, and pytest all run against the stubs without crashing. Stubs have no real code so there should be zero lint issues and zero type errors. Fix any tool configuration problems discovered here — it is far easier to fix them now than after real code exists.
   ```
   verify:
     uv run ruff check src/ tests/
