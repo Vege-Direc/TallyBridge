@@ -162,7 +162,7 @@
   commit: feat(connection): add TallyConnection with retry and error handling
   ```
 
-- [ ] **parser.py** — Implement `src/tallybridge/parser.py`. Spec: SPECS.md §5. Write `tests/test_parser.py` using XML strings from mock_tally.
+- [x] **parser.py** — Implement `src/tallybridge/parser.py`. Spec: SPECS.md §5. Write `tests/test_parser.py` using XML strings from mock_tally.
   ```
   verify: uv run pytest tests/test_parser.py -v --cov=src/tallybridge/parser --cov-fail-under=95
   commit: feat(parser): add XML parser with amount/date/bool helpers

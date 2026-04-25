@@ -1,5 +1,8 @@
 """Mock Tally HTTP server — see SPECS.md §11a."""
 
+from xml.sax.saxutils import escape as xml_escape
+
+
 SAMPLE_LEDGERS = [
     ("guid-cash-001", 100, "Cash", "Cash-in-Hand", "45000.00 Dr", False, None),
     ("guid-hdfc-001", 101, "HDFC Bank", "Bank Accounts", "250000.00 Dr", False, None),
@@ -59,17 +62,17 @@ def build_ledger_xml(ledgers: list | None = None) -> str:
     ledgers = ledgers or SAMPLE_LEDGERS
     lines = ["<ENVELOPE><BODY><DATA><TALLYMESSAGE>"]
     for guid, alter_id, name, parent, closing, is_revenue, gstin in ledgers:
-        lines.append(f'<LEDGER NAME="{name}" GUID="{guid}">')
+        lines.append(f'<LEDGER NAME="{xml_escape(name)}" GUID="{guid}">')
         lines.append(f"<ALTERID>{alter_id}</ALTERID>")
-        lines.append(f"<NAME>{name}</NAME>")
-        lines.append(f"<PARENT>{parent}</PARENT>")
+        lines.append(f"<NAME>{xml_escape(name)}</NAME>")
+        lines.append(f"<PARENT>{xml_escape(parent)}</PARENT>")
         lines.append(f"<CLOSINGBALANCE>{closing}</CLOSINGBALANCE>")
         lines.append(f"<OPENINGBALANCE>0.00 Dr</OPENINGBALANCE>")
         lines.append(f"<ISREVENUE>{'Yes' if is_revenue else 'No'}</ISREVENUE>")
         lines.append("<AFFECTSGROSSPROFIT>No</AFFECTSGROSSPROFIT>")
         if gstin:
             lines.append(f"<GSTIN>{gstin}</GSTIN>")
-        lines.append(f"<LEDMAILINGNAME>{name}</LEDMAILINGNAME>")
+        lines.append(f"<LEDMAILINGNAME>{xml_escape(name)}</LEDMAILINGNAME>")
         lines.append("</LEDGER>")
     lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
     return "".join(lines)
