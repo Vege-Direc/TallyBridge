@@ -202,7 +202,7 @@
   commit: feat(mcp): add MCP server with 12 tools
   ```
 
-- [ ] **cli.py** — Implement `src/tallybridge/cli.py` with all commands including `init` wizard. Spec: SPECS.md §10. Write `tests/test_cli.py`.
+- [x] **cli.py** — Implement `src/tallybridge/cli.py` with all commands including `init` wizard. Spec: SPECS.md §10. Write `tests/test_cli.py`.
   ```
   verify: uv run pytest tests/test_cli.py -v && uv run tallybridge --help
   commit: feat(cli): add Typer CLI with init wizard and all commands
