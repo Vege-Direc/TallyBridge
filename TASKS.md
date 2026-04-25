@@ -218,7 +218,7 @@
   commit: feat: expose stable public API in __init__.py
   ```
 
-- [ ] **Integration tests** — Write `tests/test_integration.py`: full end-to-end flow using mock_tally → sync_all → query. Spec: SPECS.md §11c.
+- [x] **Integration tests** — Write `tests/test_integration.py`: full end-to-end flow using mock_tally → sync_all → query. Spec: SPECS.md §11c.
   ```
   verify: uv run pytest tests/test_integration.py -v
   commit: test: add end-to-end integration tests

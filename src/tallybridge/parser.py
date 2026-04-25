@@ -67,13 +67,16 @@ class TallyXMLParser:
 
     @staticmethod
     def get_text(element: ET.Element | None, tag: str, default: str = "") -> str:
-        """Safely get text from a child tag. Returns default if missing or empty."""
+        """Safely get text from a child tag or element attribute. Returns default if missing."""
         if element is None:
             return default
         child = element.find(tag)
-        if child is None or child.text is None:
-            return default
-        return child.text
+        if child is not None and child.text is not None:
+            return child.text
+        attrib_val = element.get(tag)
+        if attrib_val is not None:
+            return attrib_val
+        return default
 
     def parse_ledgers(self, xml: str) -> list[TallyLedger]:
         """Parse ledger collection XML."""
