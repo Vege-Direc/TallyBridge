@@ -228,13 +228,13 @@
 
 ## Phase 6 — Recipes and Docs
 
-- [ ] **recipes/** — Write all four recipe scripts. Spec: SPECS.md §13. Each must run standalone and fail gracefully when Tally is not connected.
+- [x] **recipes/** — Write all four recipe scripts. Spec: SPECS.md §13. Each must run standalone and fail gracefully when Tally is not connected.
   ```
   verify: uv run python recipes/daily_digest.py 2>&1 | grep -E "(sales|Could not connect)"
   commit: feat(recipes): add daily digest, receivables, GST, and anomaly detector
   ```
 
-- [ ] **docs/** — Write `docs/tally-setup.md` (how to enable Tally HTTP server) and `docs/mcp-setup.md` (claude_desktop_config.json setup). Update `README.md` with `connect()` quickstart.
+- [x] **docs/** — Write `docs/tally-setup.md` (how to enable Tally HTTP server) and `docs/mcp-setup.md` (claude_desktop_config.json setup). Update `README.md` with `connect()` quickstart.
   ```
   verify: cat docs/tally-setup.md | grep "9000"   # confirm port mentioned
   commit: docs: add Tally setup guide and MCP connection guide
