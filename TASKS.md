@@ -14,7 +14,7 @@
 > **Gate:** Do not start Phase 1 until all four Phase 0 tasks have passing verify commands.
 > These tasks build the foundation everything else depends on.
 
-- [ ] **0a · Directory and file tree** — Create the complete directory structure from CLAUDE.md "Repository Layout" with stub content in every file. Rules: every `__init__.py` → one-line docstring `"""<Package> package."""`; every `src/tallybridge/*.py` → `"""<Purpose> — see SPECS.md §<N>."""`; every `tests/test_*.py` → `"""Tests for <module> — populated in a later task."""`. Also write real content for: `pyproject.toml` (from the provided file), `README.md` (description + quickstart), `LICENSE` (MIT, current year), `.gitignore` (Python standard — include `__pycache__`, `*.pyc`, `.env`, `*.duckdb`, `dist/`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`), `CHANGELOG.md` (`## [Unreleased]` stub).
+- [x] **0a · Directory and file tree** — Create the complete directory structure from CLAUDE.md "Repository Layout" with stub content in every file. Rules: every `__init__.py` → one-line docstring `"""<Package> package."""`; every `src/tallybridge/*.py` → `"""<Purpose> — see SPECS.md §<N>."""`; every `tests/test_*.py` → `"""Tests for <module> — populated in a later task."""`. Also write real content for: `pyproject.toml` (from the provided file), `README.md` (description + quickstart), `LICENSE` (MIT, current year), `.gitignore` (Python standard — include `__pycache__`, `*.pyc`, `.env`, `*.duckdb`, `dist/`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`), `CHANGELOG.md` (`## [Unreleased]` stub).
   ```
   verify:
     uv run python -c "
