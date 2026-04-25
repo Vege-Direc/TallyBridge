@@ -174,7 +174,7 @@
   commit: feat(cache): add DuckDB cache with schema, upserts, and migrations
   ```
 
-- [ ] **sync.py** — Implement `src/tallybridge/sync.py`. Spec: SPECS.md §7. Write `tests/test_sync.py` using `AsyncMock`.
+- [x] **sync.py** — Implement `src/tallybridge/sync.py`. Spec: SPECS.md §7. Write `tests/test_sync.py` using `AsyncMock`.
   ```
   verify: uv run pytest tests/test_sync.py -v --cov=src/tallybridge/sync --cov-fail-under=90
   commit: feat(sync): add AlterID-based incremental sync engine
