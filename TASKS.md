@@ -113,19 +113,19 @@
 
 ## Phase 2 — Data Models
 
-- [ ] **models/master.py** — Implement `TallyLedger`, `TallyGroup`, `TallyStockItem`, `TallyGodown`, `TallyVoucherType`, `TallyUnit`, `TallyStockGroup`, `TallyCostCenter`. Spec: SPECS.md §3a.
+- [x] **models/master.py** — Implement `TallyLedger`, `TallyGroup`, `TallyStockItem`, `TallyGodown`, `TallyVoucherType`, `TallyUnit`, `TallyStockGroup`, `TallyCostCenter`. Spec: SPECS.md §3a.
   ```
   verify: uv run pytest tests/test_models.py::test_master -v
   commit: feat(models): add master data models
   ```
 
-- [ ] **models/voucher.py** — Implement `TallyVoucher`, `TallyVoucherEntry`, `TallyInventoryEntry`. Spec: SPECS.md §3b.
+- [x] **models/voucher.py** — Implement `TallyVoucher`, `TallyVoucherEntry`, `TallyInventoryEntry`. Spec: SPECS.md §3b.
   ```
   verify: uv run pytest tests/test_models.py::test_voucher -v
   commit: feat(models): add voucher models
   ```
 
-- [ ] **models/report.py** — Implement `DailyDigest`, `OutstandingBill`, `TrialBalanceLine`, `StockAgingLine`, `SyncResult`. Update `models/__init__.py` to re-export all. Spec: SPECS.md §3c. Write all model tests in `tests/test_models.py`.
+- [x] **models/report.py** — Implement `DailyDigest`, `OutstandingBill`, `TrialBalanceLine`, `StockAgingLine`, `SyncResult`. Update `models/__init__.py` to re-export all. Spec: SPECS.md §3c. Write all model tests in `tests/test_models.py`.
   ```
   verify: uv run pytest tests/test_models.py -v
   commit: feat(models): add report models and complete __init__ exports
