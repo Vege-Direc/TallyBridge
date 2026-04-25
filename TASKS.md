@@ -196,7 +196,7 @@
   commit: feat(query): add TallyQuery public API
   ```
 
-- [ ] **mcp/tools.py + mcp/server.py** — Implement MCP server and all 12 tools. Spec: SPECS.md §9. Write `tests/test_mcp.py`.
+- [x] **mcp/tools.py + mcp/server.py** — Implement MCP server and all 12 tools. Spec: SPECS.md §9. Write `tests/test_mcp.py`.
   ```
   verify: uv run pytest tests/test_mcp.py -v --cov=src/tallybridge/mcp --cov-fail-under=85
   commit: feat(mcp): add MCP server with 12 tools
