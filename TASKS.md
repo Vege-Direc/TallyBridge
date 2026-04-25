@@ -103,7 +103,7 @@
   commit: feat(exceptions): add custom exception hierarchy
   ```
 
-- [ ] **config.py** — Implement `src/tallybridge/config.py` with `TallyBridgeConfig` and `get_config()`. Spec: SPECS.md §2. Write `tests/test_config.py`.
+- [x] **config.py** — Implement `src/tallybridge/config.py` with `TallyBridgeConfig` and `get_config()`. Spec: SPECS.md §2. Write `tests/test_config.py`.
   ```
   verify: uv run pytest tests/test_config.py -v --cov=src/tallybridge/config --cov-fail-under=90
   commit: feat(config): add pydantic-settings config with singleton
