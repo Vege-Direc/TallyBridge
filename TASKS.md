@@ -97,7 +97,7 @@
 
 ## Phase 1 — Foundation
 
-- [ ] **exceptions.py** — Implement `src/tallybridge/exceptions.py`. Spec: SPECS.md §1. Write `tests/test_exceptions.py`.
+- [x] **exceptions.py** — Implement `src/tallybridge/exceptions.py`. Spec: SPECS.md §1. Write `tests/test_exceptions.py`.
   ```
   verify: uv run pytest tests/test_exceptions.py -v
   commit: feat(exceptions): add custom exception hierarchy
