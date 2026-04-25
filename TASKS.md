@@ -77,7 +77,7 @@
   commit: chore: confirm ruff, mypy, and pytest all run clean on stubs
   ```
 
-- [ ] **0d · CI workflows** — Write `.github/workflows/test.yml` (trigger: push + PR; matrix: `ubuntu-latest`, `windows-latest`, `macos-latest`; steps: checkout → setup-uv with python 3.11 → `uv sync --dev` → `uv run ruff check src/` → `uv run pytest tests/ -v`). Write `.github/workflows/publish.yml` (trigger: `v*` tags; environment: `pypi`; uses PyPI Trusted Publishing via `pypa/gh-action-pypi-publish`; steps: `uv build` → publish).
+- [x] **0d · CI workflows** — Write `.github/workflows/test.yml` (trigger: push + PR; matrix: `ubuntu-latest`, `windows-latest`, `macos-latest`; steps: checkout → setup-uv with python 3.11 → `uv sync --dev` → `uv run ruff check src/` → `uv run pytest tests/ -v`). Write `.github/workflows/publish.yml` (trigger: `v*` tags; environment: `pypi`; uses PyPI Trusted Publishing via `pypa/gh-action-pypi-publish`; steps: `uv build` → publish).
   ```
   verify:
     uv run python -c "
