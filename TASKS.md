@@ -184,13 +184,13 @@
 
 ## Phase 4 — API and Interfaces
 
-- [ ] **conftest.py** — Write `tests/conftest.py` with all shared fixtures: `mock_tally_server`, `tmp_db`, `populated_db`, `tally_query`, `tally_connection`. Spec: SPECS.md §11b. The `populated_db` fixture must load realistic sample data so all query tests work.
+- [x] **conftest.py** — Write `tests/conftest.py` with all shared fixtures: `mock_tally_server`, `tmp_db`, `populated_db`, `tally_query`, `tally_connection`. Spec: SPECS.md §11b. The `populated_db` fixture must load realistic sample data so all query tests work.
   ```
   verify: uv run pytest tests/ --collect-only 2>&1 | grep "test session starts"
   commit: test: add shared fixtures and populated test database
   ```
 
-- [ ] **query.py** — Implement `src/tallybridge/query.py`. Spec: SPECS.md §8. Write `tests/test_query.py` using the `tally_query` fixture from conftest.
+- [x] **query.py** — Implement `src/tallybridge/query.py`. Spec: SPECS.md §8. Write `tests/test_query.py` using the `tally_query` fixture from conftest.
   ```
   verify: uv run pytest tests/test_query.py -v --cov=src/tallybridge/query --cov-fail-under=90
   commit: feat(query): add TallyQuery public API
