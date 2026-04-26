@@ -3,20 +3,18 @@
 import asyncio
 import platform
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import typer
-from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
 from tallybridge.config import TallyBridgeConfig, get_config, reset_config
-from tallybridge.exceptions import TallyConnectionError
 
 app = typer.Typer(
     name="tallybridge",
     help="Connect TallyPrime to DuckDB and AI via MCP",
+    no_args_is_help=True,
 )
 config_app = typer.Typer(help="Configuration commands")
 service_app = typer.Typer(help="Windows service management")
@@ -24,6 +22,23 @@ app.add_typer(config_app, name="config")
 app.add_typer(service_app, name="service")
 
 console = Console()
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from tallybridge import __version__
+
+        console.print(f"TallyBridge {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False, "--version", "-v", help="Show version", callback=_version_callback
+    ),
+) -> None:
+    """Connect TallyPrime to DuckDB and AI via MCP."""
 
 
 @config_app.command("show")
@@ -71,6 +86,7 @@ def status() -> None:
     cfg = get_config()
     try:
         from tallybridge.cache import TallyCache
+
         cache = TallyCache(cfg.db_path)
         sync_status = cache.get_sync_status()
         health = cache.health_check()
@@ -116,7 +132,7 @@ def sync(
     parser = TallyXMLParser()
     engine = TallySyncEngine(connection, cache, parser)
 
-    async def _run():
+    async def _run() -> None:
         if full:
             results = await engine.full_sync()
         else:
@@ -131,9 +147,11 @@ def sync(
         cache.close()
 
     if watch:
-        async def _watch():
+
+        async def _watch() -> None:
             with console.status("Watching for changes..."):
                 await engine.run_continuous(cfg.sync_frequency_minutes)
+
         asyncio.run(_watch())
     else:
         asyncio.run(_run())
@@ -181,13 +199,12 @@ def mcp(
     port: int = typer.Option(8000, "--port", help="HTTP port"),
 ) -> None:
     """Start MCP server (stdio)."""
-    from tallybridge.mcp.server import TallyMCPServer
+    from tallybridge.mcp.sdk_server import mcp as mcp_server
 
-    server = TallyMCPServer()
     if http:
         console.print(f"MCP HTTP server not yet implemented (port={port})")
     else:
-        server.run_stdio()
+        mcp_server.run(transport="stdio")
 
 
 @app.command()
@@ -197,10 +214,12 @@ def doctor() -> None:
 
     # 1. Python version
     py_ver = sys.version_info
-    checks.append((
-        f"Python version ≥ 3.11 ({py_ver.major}.{py_ver.minor})",
-        py_ver >= (3, 11),
-    ))
+    checks.append(
+        (
+            f"Python version ≥ 3.11 ({py_ver.major}.{py_ver.minor})",
+            py_ver >= (3, 11),
+        )
+    )
 
     # 2. Tally reachable
     cfg = get_config()
@@ -208,10 +227,12 @@ def doctor() -> None:
         reachable = asyncio.run(_ping_tally(cfg))
     except Exception:
         reachable = False
-    checks.append((
-        f"Tally reachable on {cfg.tally_host}:{cfg.tally_port}",
-        reachable,
-    ))
+    checks.append(
+        (
+            f"Tally reachable on {cfg.tally_host}:{cfg.tally_port}",
+            reachable,
+        )
+    )
 
     # 3. DuckDB file exists
     db_exists = Path(cfg.db_path).exists()
@@ -222,6 +243,7 @@ def doctor() -> None:
     if db_exists:
         try:
             from tallybridge.cache import TallyCache
+
             cache = TallyCache(cfg.db_path)
             status = cache.get_sync_status()
             if status:
@@ -238,6 +260,7 @@ def doctor() -> None:
     if db_exists:
         try:
             from tallybridge.cache import TallyCache
+
             cache = TallyCache(cfg.db_path)
             count = cache.query("SELECT COUNT(*) as cnt FROM mst_ledger")
             has_data = count[0]["cnt"] > 0 if count else False
@@ -248,7 +271,8 @@ def doctor() -> None:
 
     # 6. MCP server importable
     try:
-        from tallybridge.mcp.server import TallyMCPServer  # noqa: F401
+        from tallybridge.mcp.sdk_server import mcp  # noqa: F401
+
         mcp_ok = True
     except Exception:
         mcp_ok = False
@@ -273,16 +297,20 @@ def logs() -> None:
 
 @app.command()
 def init() -> None:
-    """Interactive setup wizard (5 steps)."""
-    console.print("[bold]Welcome to TallyBridge![/bold] Let's connect to your TallyPrime.")
+    """Interactive setup wizard."""
+    console.print(
+        "[bold]Welcome to TallyBridge![/bold] Let's connect to your TallyPrime."
+    )
 
-    running = typer.confirm("[1/5] Is TallyPrime running on this computer?", default=True)
+    running = typer.confirm(
+        "Is TallyPrime running on this computer?", default=True
+    )
     if not running:
         console.print("Please start TallyPrime and run this wizard again.")
         raise typer.Exit(0)
 
     location = typer.prompt(
-        "[2/5] Where is TallyPrime?",
+        "Where is TallyPrime? (1 = This computer, 2 = Another computer)",
         type=int,
     )
     if location == 2:
@@ -292,8 +320,8 @@ def init() -> None:
         host = "localhost"
         port = 9000
 
-    db_path = typer.prompt("[4/5] Where to store data?", default="tallybridge.duckdb")
-    freq = typer.prompt("[5/5] How often to sync (minutes)?", default=5, type=int)
+    db_path = typer.prompt("Where to store data?", default="tallybridge.duckdb")
+    freq = typer.prompt("How often to sync (minutes)?", default=5, type=int)
 
     console.print("Writing configuration...")
     config_set("TALLY_HOST", host)
@@ -307,6 +335,7 @@ def init() -> None:
 
 async def _ping_tally(cfg: TallyBridgeConfig) -> bool:
     from tallybridge.connection import TallyConnection
+
     conn = TallyConnection(cfg)
     result = await conn.ping()
     await conn.close()

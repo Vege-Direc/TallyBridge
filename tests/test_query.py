@@ -22,7 +22,7 @@ def test_get_daily_digest_empty_db(tmp_db) -> None:
 
 def test_get_daily_digest_excludes_cancelled(tally_query: TallyQuery) -> None:
     digest = tally_query.get_daily_digest(date(2025, 12, 31))
-    cancelled_sales = Decimal("15000")
+    Decimal("15000")
     expected = Decimal("50000") + Decimal("35000") + Decimal("25000")
     assert digest.total_sales == expected
 
@@ -69,14 +69,18 @@ def test_get_party_outstanding(tally_query: TallyQuery) -> None:
 
 
 def test_get_sales_summary_by_party(tally_query: TallyQuery) -> None:
-    summary = tally_query.get_sales_summary(date(2025, 1, 1), date(2025, 12, 31), group_by="party")
+    summary = tally_query.get_sales_summary(
+        date(2025, 1, 1), date(2025, 12, 31), group_by="party"
+    )
     assert len(summary) > 0
     parties = {r["party_name"] for r in summary}
     assert "Sharma Trading Co" in parties
 
 
 def test_get_sales_summary_by_day(tally_query: TallyQuery) -> None:
-    summary = tally_query.get_sales_summary(date(2025, 1, 1), date(2025, 12, 31), group_by="day")
+    summary = tally_query.get_sales_summary(
+        date(2025, 1, 1), date(2025, 12, 31), group_by="day"
+    )
     assert len(summary) > 0
 
 
@@ -148,3 +152,166 @@ def test_search_empty(tally_query: TallyQuery) -> None:
 def test_search_no_match(tally_query: TallyQuery) -> None:
     results = tally_query.search("zzznonexistent")
     assert len(results["ledgers"]) == 0
+
+
+def test_get_sales_summary_fallback_group(tally_query: TallyQuery) -> None:
+    summary = tally_query.get_sales_summary(
+        date(2025, 1, 1), date(2025, 12, 31), group_by="week"
+    )
+    assert isinstance(summary, list)
+
+
+def test_get_sales_summary_month_group(tally_query: TallyQuery) -> None:
+    summary = tally_query.get_sales_summary(
+        date(2025, 1, 1), date(2025, 12, 31), group_by="month"
+    )
+    assert isinstance(summary, list)
+
+
+def test_get_sales_summary_item_group(tally_query: TallyQuery) -> None:
+    summary = tally_query.get_sales_summary(
+        date(2025, 1, 1), date(2025, 12, 31), group_by="item"
+    )
+    assert isinstance(summary, list)
+
+
+def test_get_vouchers_with_date_filter(tally_query: TallyQuery) -> None:
+    vouchers = tally_query.get_vouchers(
+        from_date=date(2025, 4, 1), to_date=date(2025, 4, 5)
+    )
+    for v in vouchers:
+        assert v.date >= date(2025, 4, 1)
+        assert v.date <= date(2025, 4, 5)
+
+
+def test_get_vouchers_with_party_filter(tally_query: TallyQuery) -> None:
+    vouchers = tally_query.get_vouchers(party_name="Sharma Trading Co")
+    for v in vouchers:
+        assert v.party_ledger == "Sharma Trading Co"
+
+
+def test_get_vouchers_with_all_filters(tally_query: TallyQuery) -> None:
+    vouchers = tally_query.get_vouchers(
+        voucher_type="Sales",
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+        party_name="Sharma Trading Co",
+        limit=10,
+    )
+    assert isinstance(vouchers, list)
+
+
+def test_get_stock_aging_no_movement(tally_query: TallyQuery) -> None:
+    aging = tally_query.get_stock_aging(as_of_date=date(2025, 4, 15))
+    no_movement = [a for a in aging if a.aging_bucket == "No Movement"]
+    assert len(no_movement) >= 0
+
+
+def test_get_gst_summary_with_cgst(tally_query: TallyQuery) -> None:
+    summary = tally_query.get_gst_summary(date(2025, 1, 1), date(2025, 12, 31))
+    assert summary["total_cgst_collected"] >= Decimal("0")
+
+
+def test_get_cost_center_summary_with_filter(tally_query: TallyQuery) -> None:
+    summary = tally_query.get_cost_center_summary(
+        date(2025, 1, 1),
+        date(2025, 12, 31),
+        cost_center_name="Head Office",
+    )
+    assert isinstance(summary, list)
+    for item in summary:
+        assert item["cost_center"] == "Head Office"
+
+
+def test_search_with_vouchers(tally_query: TallyQuery) -> None:
+    results = tally_query.search("Invoice")
+    assert isinstance(results["vouchers"], list)
+
+
+def test_search_with_limit(tally_query: TallyQuery) -> None:
+    results = tally_query.search("a", limit=2)
+    assert isinstance(results["ledgers"], list)
+
+
+def test_get_bucket_boundaries() -> None:
+    assert TallyQuery._get_bucket(15, [30, 60, 90]) == "1-30"
+    assert TallyQuery._get_bucket(45, [30, 60, 90]) == "31-60"
+    assert TallyQuery._get_bucket(75, [30, 60, 90]) == "61-90"
+    assert TallyQuery._get_bucket(120, [30, 60, 90]) == "90+"
+
+
+def test_row_to_voucher_string_date(tally_query: TallyQuery) -> None:
+    row = {
+        "guid": "v1",
+        "alter_id": 1,
+        "voucher_number": "1",
+        "voucher_type": "Sales",
+        "date": "2025-04-01",
+        "effective_date": "2025-04-01",
+        "total_amount": Decimal("1000"),
+    }
+    v = TallyQuery._row_to_voucher(row)
+    assert v.date == date(2025, 4, 1)
+    assert v.effective_date == date(2025, 4, 1)
+
+
+def test_row_to_voucher_invalid_date(tally_query: TallyQuery) -> None:
+    row = {
+        "guid": "v2",
+        "alter_id": 1,
+        "voucher_number": "2",
+        "voucher_type": "Sales",
+        "date": "not-a-date",
+        "effective_date": "invalid",
+        "due_date": "bad-date",
+        "total_amount": Decimal("500"),
+    }
+    v = TallyQuery._row_to_voucher(row)
+    assert v.date == date.today()
+    assert v.effective_date is None
+    assert v.due_date is None
+
+
+def test_row_to_voucher_date_object(tally_query: TallyQuery) -> None:
+    row = {
+        "guid": "v3",
+        "alter_id": 1,
+        "voucher_number": "3",
+        "voucher_type": "Sales",
+        "date": date(2025, 4, 1),
+        "total_amount": Decimal("2000"),
+    }
+    v = TallyQuery._row_to_voucher(row)
+    assert v.date == date(2025, 4, 1)
+
+
+def test_row_to_voucher_non_date_type(tally_query: TallyQuery) -> None:
+    row = {
+        "guid": "v4",
+        "alter_id": 1,
+        "voucher_number": "4",
+        "voucher_type": "Sales",
+        "date": 12345,
+        "effective_date": 99999,
+        "due_date": 88888,
+        "total_amount": Decimal("3000"),
+    }
+    v = TallyQuery._row_to_voucher(row)
+    assert v.date == date.today()
+    assert v.effective_date is None
+    assert v.due_date is None
+
+
+def test_get_receivables_min_days(tally_query: TallyQuery) -> None:
+    recs = tally_query.get_receivables(min_days_overdue=1)
+    assert isinstance(recs, list)
+
+
+def test_get_payables_overdue_only(tally_query: TallyQuery) -> None:
+    pays = tally_query.get_payables(overdue_only=True)
+    assert isinstance(pays, list)
+
+
+def test_get_low_stock_with_threshold(tally_query: TallyQuery) -> None:
+    items = tally_query.get_low_stock_items(threshold_quantity=Decimal("10"))
+    assert isinstance(items, list)

@@ -11,6 +11,7 @@ class TallyBridgeConfig(BaseSettings):
     tally_host: str = "localhost"
     tally_port: int = 9000
     tally_company: str | None = None
+    tally_encoding: str = "utf-8"
 
     db_path: str = "tallybridge.duckdb"
 
@@ -43,13 +44,32 @@ class TallyBridgeConfig(BaseSettings):
             raise ValueError("tally_port must be between 1 and 65535")
         return v
 
+    @field_validator("tally_encoding")
+    @classmethod
+    def validate_encoding(cls, v: str) -> str:
+        allowed = {"utf-8", "utf-16"}
+        if v.lower() not in allowed:
+            raise ValueError(f"tally_encoding must be one of {allowed}")
+        return v.lower()
+
     async def validate_tally_connection(self) -> None:
         """Ping Tally and raise TallyConnectionError if unreachable."""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
                     self.tally_url,
-                    content="<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export Data</TALLYREQUEST><TYPE>Collection</TYPE><ID>Ping</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"Ping\" ISMODIFY=\"No\"><TYPE>Company</TYPE><FETCH>NAME</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>".encode("utf-8"),
+                    content=(
+                        '<ENVELOPE><HEADER><VERSION>1</VERSION>'
+                        '<TALLYREQUEST>Export Data</TALLYREQUEST>'
+                        '<TYPE>Collection</TYPE><ID>Ping</ID></HEADER>'
+                        '<BODY><DESC><STATICVARIABLES>'
+                        '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>'
+                        '</STATICVARIABLES><TDL><TDLMESSAGE>'
+                        '<COLLECTION NAME="Ping" ISMODIFY="No">'
+                        '<TYPE>Company</TYPE><FETCH>NAME</FETCH>'
+                        '</COLLECTION></TDLMESSAGE></TDL>'
+                        '</DESC></BODY></ENVELOPE>'
+                    ).encode("utf-8"),
                     headers={"Content-Type": "text/xml; charset=utf-8"},
                 )
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:

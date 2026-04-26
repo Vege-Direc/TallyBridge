@@ -6,16 +6,19 @@ from decimal import Decimal
 import pytest
 
 from tallybridge.cache import TallyCache
+from tallybridge.exceptions import TallyBridgeCacheError
 from tallybridge.models.master import (
     TallyCostCenter,
-    TallyGroup,
     TallyLedger,
     TallyStockGroup,
-    TallyStockItem,
     TallyUnit,
     TallyVoucherType,
 )
-from tallybridge.models.voucher import TallyInventoryEntry, TallyVoucher, TallyVoucherEntry
+from tallybridge.models.voucher import (
+    TallyInventoryEntry,
+    TallyVoucher,
+    TallyVoucherEntry,
+)
 
 
 @pytest.fixture
@@ -29,6 +32,7 @@ def test_db_file_created(tmp_path) -> None:
     path = str(tmp_path / "new.duckdb")
     cache = TallyCache(path)
     import os
+
     assert os.path.exists(path)
     cache.close()
 
@@ -39,7 +43,9 @@ def test_initialize_idempotent(db: TallyCache) -> None:
 
 
 def test_upsert_ledgers_inserts(db: TallyCache) -> None:
-    ledger = TallyLedger(name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand")
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
     count = db.upsert_ledgers([ledger])
     assert count == 1
     rows = db.query("SELECT COUNT(*) as cnt FROM mst_ledger")
@@ -47,9 +53,13 @@ def test_upsert_ledgers_inserts(db: TallyCache) -> None:
 
 
 def test_upsert_ledgers_updates(db: TallyCache) -> None:
-    ledger = TallyLedger(name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand")
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
     db.upsert_ledgers([ledger])
-    updated = TallyLedger(name="Cash", guid="g1", alter_id=2, parent_group="Cash-in-Hand")
+    updated = TallyLedger(
+        name="Cash", guid="g1", alter_id=2, parent_group="Cash-in-Hand"
+    )
     db.upsert_ledgers([updated])
     rows = db.query("SELECT alter_id FROM mst_ledger WHERE guid = 'g1'")
     assert rows[0]["alter_id"] == 2
@@ -88,13 +98,19 @@ def test_upsert_vouchers_with_entries(db: TallyCache) -> None:
 
 def test_upsert_vouchers_replaces_entries(db: TallyCache) -> None:
     v1 = TallyVoucher(
-        guid="v1", alter_id=1, voucher_number="1", voucher_type="Sales",
+        guid="v1",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
         date=date(2025, 1, 1),
         ledger_entries=[TallyVoucherEntry(ledger_name="A", amount=Decimal("100"))],
     )
     db.upsert_vouchers([v1])
     v2 = TallyVoucher(
-        guid="v1", alter_id=2, voucher_number="1", voucher_type="Sales",
+        guid="v1",
+        alter_id=2,
+        voucher_number="1",
+        voucher_type="Sales",
         date=date(2025, 1, 1),
         ledger_entries=[
             TallyVoucherEntry(ledger_name="B", amount=Decimal("200")),
@@ -130,3 +146,260 @@ def test_health_check(db: TallyCache) -> None:
     assert "record_counts" in health
     assert "last_sync_times" in health
     assert "db_size_mb" in health
+
+
+def test_upsert_voucher_types(db: TallyCache) -> None:
+    vt = TallyVoucherType(
+        name="Sales", guid="vt1", alter_id=1, parent="Accounting Vouchers"
+    )
+    count = db.upsert_voucher_types([vt])
+    assert count == 1
+    rows = db.query("SELECT * FROM mst_voucher_type WHERE guid = 'vt1'")
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Sales"
+
+
+def test_upsert_voucher_types_update(db: TallyCache) -> None:
+    vt1 = TallyVoucherType(
+        name="Sales", guid="vt1", alter_id=1, parent="Accounting Vouchers"
+    )
+    db.upsert_voucher_types([vt1])
+    vt2 = TallyVoucherType(
+        name="Sales", guid="vt1", alter_id=2, parent="Accounting Vouchers"
+    )
+    db.upsert_voucher_types([vt2])
+    rows = db.query("SELECT alter_id FROM mst_voucher_type WHERE guid = 'vt1'")
+    assert rows[0]["alter_id"] == 2
+
+
+def test_upsert_units(db: TallyCache) -> None:
+    unit = TallyUnit(
+        name="Nos", guid="u1", alter_id=1, unit_type="Simple", symbol="Nos"
+    )
+    count = db.upsert_units([unit])
+    assert count == 1
+    rows = db.query("SELECT * FROM mst_unit WHERE guid = 'u1'")
+    assert rows[0]["name"] == "Nos"
+
+
+def test_upsert_stock_groups(db: TallyCache) -> None:
+    sg = TallyStockGroup(
+        name="Finished Goods", guid="sg1", alter_id=1, parent="Primary"
+    )
+    count = db.upsert_stock_groups([sg])
+    assert count == 1
+    rows = db.query("SELECT * FROM mst_stock_group WHERE guid = 'sg1'")
+    assert rows[0]["name"] == "Finished Goods"
+
+
+def test_upsert_cost_centers(db: TallyCache) -> None:
+    cc = TallyCostCenter(name="Head Office", guid="cc1", alter_id=1, parent="Primary")
+    count = db.upsert_cost_centers([cc])
+    assert count == 1
+    rows = db.query("SELECT * FROM mst_cost_center WHERE guid = 'cc1'")
+    assert rows[0]["name"] == "Head Office"
+
+
+def test_get_ledger_found(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash",
+        guid="g1",
+        alter_id=1,
+        parent_group="Cash-in-Hand",
+        closing_balance=Decimal("45000"),
+    )
+    db.upsert_ledgers([ledger])
+    result = db.get_ledger("Cash")
+    assert result is not None
+    assert result.name == "Cash"
+    assert result.closing_balance == Decimal("45000")
+
+
+def test_get_ledger_not_found(db: TallyCache) -> None:
+    result = db.get_ledger("nonexistent")
+    assert result is None
+
+
+def test_get_stock_item_not_in_cache(db: TallyCache) -> None:
+    result = db.get_ledger("MissingItem")
+    assert result is None
+
+
+def test_trial_balance(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash",
+        guid="g1",
+        alter_id=1,
+        parent_group="Cash-in-Hand",
+        opening_balance=Decimal("1000"),
+        closing_balance=Decimal("5000"),
+    )
+    db.upsert_ledgers([ledger])
+    lines = db.get_trial_balance(date(2025, 1, 1), date(2025, 12, 31))
+    assert len(lines) >= 1
+    cash_line = [ln for ln in lines if ln.ledger == "Cash"][0]
+    assert cash_line.closing_debit == Decimal("5000")
+    assert cash_line.closing_credit == Decimal("0")
+
+
+def test_trial_balance_negative_balance(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Loan",
+        guid="g2",
+        alter_id=1,
+        parent_group="Loans",
+        opening_balance=Decimal("-500"),
+        closing_balance=Decimal("-3000"),
+    )
+    db.upsert_ledgers([ledger])
+    lines = db.get_trial_balance(date(2025, 1, 1), date(2025, 12, 31))
+    loan_line = [ln for ln in lines if ln.ledger == "Loan"][0]
+    assert loan_line.closing_debit == Decimal("0")
+    assert loan_line.closing_credit == Decimal("3000")
+    assert loan_line.opening_debit == Decimal("0")
+    assert loan_line.opening_credit == Decimal("500")
+
+
+def test_upsert_voucher_error_handling(db: TallyCache) -> None:
+    bad_voucher = TallyVoucher(
+        guid="v-bad",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="A", amount=Decimal("100"))],
+    )
+    db.upsert_vouchers([bad_voucher])
+    good_voucher = TallyVoucher(
+        guid="v-bad",
+        alter_id=2,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="B", amount=Decimal("200"))],
+    )
+    count = db.upsert_vouchers([good_voucher])
+    assert count == 1
+
+
+def test_query_raises_cache_error(db: TallyCache) -> None:
+    with pytest.raises(TallyBridgeCacheError):
+        db.query("SELECT * FROM nonexistent_table")
+
+
+def test_get_sync_status_empty(db: TallyCache) -> None:
+    status = db.get_sync_status()
+    assert status == {}
+
+
+def test_close_idempotent(db: TallyCache) -> None:
+    db.close()
+
+
+def test_conn_property_reconnect(tmp_path) -> None:
+    cache = TallyCache(str(tmp_path / "reconnect.duckdb"))
+    cache.close()
+    cache._conn = None
+    conn = cache.conn
+    assert conn is not None
+    cache.close()
+
+
+def test_trn_cost_centre_table_exists(db: TallyCache) -> None:
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_name = 'trn_cost_centre'"
+    )
+    assert len(rows) >= 1
+
+
+def test_trn_bill_table_exists(db: TallyCache) -> None:
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_name = 'trn_bill'"
+    )
+    assert len(rows) >= 1
+
+
+def test_upsert_voucher_with_cost_centre(db: TallyCache) -> None:
+    from tallybridge.models.voucher import TallyCostCentreAllocation
+
+    voucher = TallyVoucher(
+        guid="v-cc1",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="Cash", amount=Decimal("100"))],
+        cost_centre_allocations=[
+            TallyCostCentreAllocation(
+                ledger_name="Cash", cost_centre="Head Office", amount=Decimal("100")
+            )
+        ],
+    )
+    db.upsert_vouchers([voucher])
+    rows = db.query("SELECT * FROM trn_cost_centre WHERE voucher_guid = 'v-cc1'")
+    assert len(rows) == 1
+    assert rows[0]["cost_centre"] == "Head Office"
+
+
+def test_upsert_voucher_with_bill_allocation(db: TallyCache) -> None:
+    from tallybridge.models.voucher import TallyBillAllocation
+
+    voucher = TallyVoucher(
+        guid="v-bill1",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="Cash", amount=Decimal("500"))],
+        bill_allocations=[
+            TallyBillAllocation(
+                ledger_name="Sharma Trading Co",
+                bill_name="SI/001",
+                amount=Decimal("500"),
+                bill_type="New Ref",
+                bill_credit_period=30,
+            )
+        ],
+    )
+    db.upsert_vouchers([voucher])
+    rows = db.query("SELECT * FROM trn_bill WHERE voucher_guid = 'v-bill1'")
+    assert len(rows) == 1
+    assert rows[0]["bill_name"] == "SI/001"
+    assert rows[0]["bill_type"] == "New Ref"
+    assert rows[0]["bill_credit_period"] == 30
+
+
+def test_company_column_migration(db: TallyCache) -> None:
+    for table in [
+        "mst_ledger",
+        "mst_group",
+        "mst_stock_item",
+        "mst_voucher_type",
+        "mst_unit",
+        "mst_stock_group",
+        "mst_cost_center",
+        "trn_voucher",
+    ]:
+        cols = db.query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ? AND column_name = 'company'",
+            [table],
+        )
+        assert len(cols) == 1, f"company column missing in {table}"
+
+
+def test_upsert_voucher_with_company(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-co1",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="Cash", amount=Decimal("1000"))],
+    )
+    db.upsert_vouchers([voucher], company="Test Company")
+    rows = db.query("SELECT company FROM trn_voucher WHERE guid = 'v-co1'")
+    assert len(rows) == 1
+    assert rows[0]["company"] == "Test Company"

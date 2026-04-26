@@ -18,6 +18,8 @@ from tallybridge.models.report import (
     TrialBalanceLine,
 )
 from tallybridge.models.voucher import (
+    TallyBillAllocation,
+    TallyCostCentreAllocation,
     TallyInventoryEntry,
     TallyVoucher,
     TallyVoucherEntry,
@@ -34,6 +36,8 @@ __all__ = [
     "TallyCostCenter",
     "TallyVoucherEntry",
     "TallyInventoryEntry",
+    "TallyCostCentreAllocation",
+    "TallyBillAllocation",
     "TallyVoucher",
     "TrialBalanceLine",
     "OutstandingBill",

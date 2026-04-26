@@ -1,16 +1,77 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.so
 *.egg-info/
+*.egg
+*.eggs/
 dist/
 build/
-*.egg
+*.whl
+*.tar.gz
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
 .env
+.env.*
+!.env.example
+
+# DuckDB database files
 *.duckdb
+*.duckdb.wal
+
+# Type checkers
 .mypy_cache/
+.pytype/
+.pyre/
+
+# Linters and formatters
 .ruff_cache/
+
+# Test and coverage
 .pytest_cache/
 htmlcov/
 .coverage
+.coverage.*
 coverage.xml
-*.whl
+report/
+
+# Build system
+.hatch/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python version managers
+.python-version
+.direnv/
+
+# AI / agent tool configs
+.kilo/
+.kilocode/
+.opencode/
+.claude/
+.cursor/
+
+# Internal development artifacts
+reference_repos/
+RECOMMENDATIONS.md
+TASKS.md
+SPECS.md
+CLAUDE.md
+AGENTS.md

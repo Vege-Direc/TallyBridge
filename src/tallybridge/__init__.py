@@ -1,33 +1,34 @@
 """TallyBridge — sync TallyPrime to DuckDB and AI via MCP."""
 
+from tallybridge.cache import TallyCache
 from tallybridge.config import TallyBridgeConfig, get_config
 from tallybridge.connection import TallyConnection
-from tallybridge.cache import TallyCache
-from tallybridge.sync import TallySyncEngine
-from tallybridge.models.report import SyncResult
-from tallybridge.query import TallyQuery
-from tallybridge.parser import TallyXMLParser
-from tallybridge.models.master import (
-    TallyLedger,
-    TallyGroup,
-    TallyStockItem,
-    TallyUnit,
-    TallyStockGroup,
-    TallyCostCenter,
-)
-from tallybridge.models.voucher import TallyVoucher, TallyVoucherEntry
-from tallybridge.models.report import (
-    DailyDigest,
-    OutstandingBill,
-    TrialBalanceLine,
-    StockAgingLine,
-)
 from tallybridge.exceptions import (
+    TallyBridgeCacheError,
     TallyConnectionError,
     TallyDataError,
     TallySyncError,
-    TallyBridgeCacheError,
 )
+from tallybridge.models.master import (
+    TallyCostCenter,
+    TallyGroup,
+    TallyLedger,
+    TallyStockGroup,
+    TallyStockItem,
+    TallyUnit,
+)
+from tallybridge.models.report import (
+    DailyDigest,
+    OutstandingBill,
+    StockAgingLine,
+    SyncResult,
+    TrialBalanceLine,
+)
+from tallybridge.models.voucher import TallyVoucher, TallyVoucherEntry
+from tallybridge.parser import TallyXMLParser
+from tallybridge.query import TallyQuery
+from tallybridge.sync import TallySyncEngine
+from tallybridge.version import TallyProduct, detect_tally_version
 
 
 def connect(
@@ -44,11 +45,13 @@ def connect(
         import tallybridge
         q = tallybridge.connect()
         digest = q.get_daily_digest()
-        print(f"Today's sales: ₹{digest.total_sales:,.0f}")
+        print(f"Today's sales: {digest.total_sales:,.0f}")
 
     Raises:
         TallyConnectionError: If TallyPrime is not running.
     """
+    import asyncio
+
     config = TallyBridgeConfig(
         tally_host=tally_host,
         tally_port=tally_port,
@@ -57,11 +60,27 @@ def connect(
     )
     cache = TallyCache(db_path)
     cache.initialize()
-    import asyncio
     connection = TallyConnection(config)
     parser = TallyXMLParser()
     engine = TallySyncEngine(connection, cache, parser)
-    asyncio.run(engine.sync_all())
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    async def _sync() -> None:
+        await engine.sync_all()
+        await connection.close()
+
+    if loop and loop.is_running():
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(asyncio.run, _sync()).result()
+    else:
+        asyncio.run(_sync())
+
     return TallyQuery(cache)
 
 
@@ -69,16 +88,30 @@ __version__ = "0.1.0"
 __all__ = [
     "connect",
     "__version__",
-    "TallyBridgeConfig", "get_config",
+    "TallyBridgeConfig",
+    "get_config",
     "TallyConnection",
     "TallyCache",
-    "TallySyncEngine", "SyncResult",
+    "TallySyncEngine",
+    "SyncResult",
     "TallyQuery",
     "TallyXMLParser",
-    "TallyLedger", "TallyGroup", "TallyStockItem",
-    "TallyUnit", "TallyStockGroup", "TallyCostCenter",
-    "TallyVoucher", "TallyVoucherEntry",
-    "DailyDigest", "OutstandingBill", "TrialBalanceLine", "StockAgingLine",
-    "TallyConnectionError", "TallyDataError",
-    "TallySyncError", "TallyBridgeCacheError",
+    "TallyLedger",
+    "TallyGroup",
+    "TallyStockItem",
+    "TallyUnit",
+    "TallyStockGroup",
+    "TallyCostCenter",
+    "TallyVoucher",
+    "TallyVoucherEntry",
+    "DailyDigest",
+    "OutstandingBill",
+    "TrialBalanceLine",
+    "StockAgingLine",
+    "TallyConnectionError",
+    "TallyDataError",
+    "TallySyncError",
+    "TallyBridgeCacheError",
+    "TallyProduct",
+    "detect_tally_version",
 ]

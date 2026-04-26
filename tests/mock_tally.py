@@ -2,23 +2,70 @@
 
 from xml.sax.saxutils import escape as xml_escape
 
-
 SAMPLE_LEDGERS = [
     ("guid-cash-001", 100, "Cash", "Cash-in-Hand", "45000.00 Dr", False, None),
     ("guid-hdfc-001", 101, "HDFC Bank", "Bank Accounts", "250000.00 Dr", False, None),
     ("guid-icici-001", 102, "ICICI Bank", "Bank Accounts", "75000.00 Dr", False, None),
     ("guid-sales-001", 103, "Sales", "Sales Accounts", "850000.00 Cr", True, None),
-    ("guid-purch-001", 104, "Purchase", "Purchase Accounts", "420000.00 Dr", True, None),
-    ("guid-party-001", 105, "Sharma Trading Co", "Sundry Debtors", "75000.00 Dr", False, "27AABCS1429B1Z1"),
-    ("guid-party-002", 106, "Mehta Suppliers", "Sundry Creditors", "42000.00 Cr", False, "27AAACM2850K1Z1"),
-    ("guid-party-003", 107, "Patel Enterprises", "Sundry Debtors", "35000.00 Dr", False, None),
+    (
+        "guid-purch-001",
+        104,
+        "Purchase",
+        "Purchase Accounts",
+        "420000.00 Dr",
+        True,
+        None,
+    ),
+    (
+        "guid-party-001",
+        105,
+        "Sharma Trading Co",
+        "Sundry Debtors",
+        "75000.00 Dr",
+        False,
+        "27AABCS1429B1Z1",
+    ),
+    (
+        "guid-party-002",
+        106,
+        "Mehta Suppliers",
+        "Sundry Creditors",
+        "42000.00 Cr",
+        False,
+        "27AAACM2850K1Z1",
+    ),
+    (
+        "guid-party-003",
+        107,
+        "Patel Enterprises",
+        "Sundry Debtors",
+        "35000.00 Dr",
+        False,
+        None,
+    ),
     ("guid-cgst-001", 108, "CGST", "Duties & Taxes", "12500.00 Cr", False, None),
-    ("guid-hindi-001", 109, "\u0936\u0930\u094d\u092e\u093e \u090f\u0902\u0921 \u0915\u0902\u092a\u0928\u0940", "Sundry Debtors", "15000.00 Dr", False, None),
+    (
+        "guid-hindi-001",
+        109,
+        "शर्मा एंड कंपनी",
+        "Sundry Debtors",
+        "15000.00 Dr",
+        False,
+        None,
+    ),
 ]
 
 SAMPLE_GROUPS = [
     ("guid-grp-001", 10, "Sundry Debtors", "Current Assets", "Assets", False, "Dr"),
-    ("guid-grp-002", 11, "Sundry Creditors", "Current Liabilities", "Liabilities", False, "Cr"),
+    (
+        "guid-grp-002",
+        11,
+        "Sundry Creditors",
+        "Current Liabilities",
+        "Liabilities",
+        False,
+        "Cr",
+    ),
     ("guid-grp-003", 12, "Sales Accounts", "Revenue", "Income", True, "Cr"),
 ]
 
@@ -35,8 +82,28 @@ SAMPLE_STOCK_GROUPS = [
 ]
 
 SAMPLE_STOCK_ITEMS = [
-    ("guid-item-001", 200, "Widget A", "Stock-in-Trade", "Nos", 18.0, "8471", 150, "45000.00"),
-    ("guid-item-002", 201, "Widget B", "Stock-in-Trade", "Kgs", 12.0, "3926", 80, "24000.00"),
+    (
+        "guid-item-001",
+        200,
+        "Widget A",
+        "Stock-in-Trade",
+        "Nos",
+        18.0,
+        "8471",
+        150,
+        "45000.00",
+    ),
+    (
+        "guid-item-002",
+        201,
+        "Widget B",
+        "Stock-in-Trade",
+        "Kgs",
+        12.0,
+        "3926",
+        80,
+        "24000.00",
+    ),
     ("guid-item-003", 202, "Widget C", "Stock-in-Trade", "Nos", 5.0, "8473", 0, "0.00"),
 ]
 
@@ -47,13 +114,121 @@ SAMPLE_COST_CENTERS = [
 ]
 
 SAMPLE_VOUCHERS = [
-    ("guid-v-001", 500, "Sales", "20250401", "20250401", "Sharma Trading Co", "SI/001/25", "50000.00", False, False, False, "Admin"),
-    ("guid-v-002", 501, "Sales", "20250405", "20250405", "Patel Enterprises", "SI/002/25", "35000.00", False, False, False, "Admin"),
-    ("guid-v-003", 502, "Sales", "20250410", "20250410", "Sharma Trading Co", "SI/003/25", "25000.00", False, False, False, "Admin"),
-    ("guid-v-004", 503, "Purchase", "20250403", "20250401", "Mehta Suppliers", "PI/001/25", "42000.00", False, False, False, "Manager"),
-    ("guid-v-005", 504, "Payment", "20250408", "20250408", "Mehta Suppliers", "PMT/001/25", "20000.00", False, False, False, "Admin"),
-    ("guid-v-006", 505, "Sales", "20250412", "20250412", "Patel Enterprises", "SI/004/25", "15000.00", True, False, False, "Admin"),
-    ("guid-v-007", 506, "Payment", "20250501", "20250501", "Sharma Trading Co", "PMT/002/25", "10000.00", False, False, True, "Admin"),
+    (
+        "guid-v-001",
+        500,
+        "Sales",
+        "20250401",
+        "20250401",
+        "Sharma Trading Co",
+        "SI/001/25",
+        "50000.00",
+        False,
+        False,
+        False,
+        "Admin",
+    ),
+    (
+        "guid-v-002",
+        501,
+        "Sales",
+        "20250405",
+        "20250405",
+        "Patel Enterprises",
+        "SI/002/25",
+        "35000.00",
+        False,
+        False,
+        False,
+        "Admin",
+    ),
+    (
+        "guid-v-003",
+        502,
+        "Sales",
+        "20250410",
+        "20250410",
+        "Sharma Trading Co",
+        "SI/003/25",
+        "25000.00",
+        False,
+        False,
+        False,
+        "Admin",
+    ),
+    (
+        "guid-v-004",
+        503,
+        "Purchase",
+        "20250403",
+        "20250401",
+        "Mehta Suppliers",
+        "PI/001/25",
+        "42000.00",
+        False,
+        False,
+        False,
+        "Manager",
+    ),
+    (
+        "guid-v-005",
+        504,
+        "Payment",
+        "20250408",
+        "20250408",
+        "Mehta Suppliers",
+        "PMT/001/25",
+        "20000.00",
+        False,
+        False,
+        False,
+        "Admin",
+    ),
+    (
+        "guid-v-006",
+        505,
+        "Sales",
+        "20250412",
+        "20250412",
+        "Patel Enterprises",
+        "SI/004/25",
+        "15000.00",
+        True,
+        False,
+        False,
+        "Admin",
+    ),
+    (
+        "guid-v-007",
+        506,
+        "Payment",
+        "20250501",
+        "20250501",
+        "Sharma Trading Co",
+        "PMT/002/25",
+        "10000.00",
+        False,
+        False,
+        True,
+        "Admin",
+    ),
+]
+
+SAMPLE_VOUCHERS_ALL_LEDGER = [
+    (
+        "guid-v-008",
+        507,
+        "Sales",
+        "20250415",
+        "20250415",
+        "Sharma Trading Co",
+        "SI/005/25",
+        "30000.00",
+        False,
+        False,
+        False,
+        "Admin",
+    ),
 ]
 
 
@@ -67,7 +242,7 @@ def build_ledger_xml(ledgers: list | None = None) -> str:
         lines.append(f"<NAME>{xml_escape(name)}</NAME>")
         lines.append(f"<PARENT>{xml_escape(parent)}</PARENT>")
         lines.append(f"<CLOSINGBALANCE>{closing}</CLOSINGBALANCE>")
-        lines.append(f"<OPENINGBALANCE>0.00 Dr</OPENINGBALANCE>")
+        lines.append("<OPENINGBALANCE>0.00 Dr</OPENINGBALANCE>")
         lines.append(f"<ISREVENUE>{'Yes' if is_revenue else 'No'}</ISREVENUE>")
         lines.append("<AFFECTSGROSSPROFIT>No</AFFECTSGROSSPROFIT>")
         if gstin:
@@ -122,7 +297,10 @@ def build_stock_group_xml(stock_groups: list | None = None) -> str:
         lines.append(f"<ALTERID>{alter_id}</ALTERID>")
         lines.append(f"<NAME>{name}</NAME>")
         lines.append(f"<PARENT>{parent}</PARENT>")
-        lines.append(f"<SHOULDQUANTITIESADD>{'Yes' if should_add else 'No'}</SHOULDQUANTITIESADD>")
+        lines.append(
+            f"<SHOULDQUANTITIESADD>"
+            f"{'Yes' if should_add else 'No'}</SHOULDQUANTITIESADD>"
+        )
         lines.append("</STOCKGROUP>")
     lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
     return "".join(lines)
@@ -132,7 +310,17 @@ def build_stock_item_xml(items: list | None = None) -> str:
     """Return Tally-format XML for stock item collection."""
     items = items or SAMPLE_STOCK_ITEMS
     lines = ["<ENVELOPE><BODY><DATA><TALLYMESSAGE>"]
-    for guid, alter_id, name, parent, unit, gst_rate, hsn, closing_qty, closing_val in items:
+    for (
+        guid,
+        alter_id,
+        name,
+        parent,
+        unit,
+        gst_rate,
+        hsn,
+        closing_qty,
+        closing_val,
+    ) in items:
         lines.append(f'<STOCKITEM NAME="{name}" GUID="{guid}">')
         lines.append(f"<ALTERID>{alter_id}</ALTERID>")
         lines.append(f"<NAME>{name}</NAME>")
@@ -187,8 +375,18 @@ def build_voucher_xml(vouchers: list | None = None) -> str:
     vouchers = vouchers or SAMPLE_VOUCHERS
     lines = ["<ENVELOPE><BODY><DATA><TALLYMESSAGE>"]
     for (
-        guid, alter_id, vtype, vdate, eff_date, party, vnum,
-        amount, is_cancelled, is_void, is_postdated, entered_by,
+        guid,
+        alter_id,
+        vtype,
+        vdate,
+        eff_date,
+        party,
+        vnum,
+        amount,
+        is_cancelled,
+        is_void,
+        is_postdated,
+        entered_by,
     ) in vouchers:
         is_deemed_positive = "Yes" if vtype in ("Sales", "Payment") else "No"
         lines.append(f'<VOUCHER VCHTYPE="{vtype}" GUID="{guid}">')
@@ -199,7 +397,7 @@ def build_voucher_xml(vouchers: list | None = None) -> str:
         lines.append(f"<VOUCHERTYPENAME>{vtype}</VOUCHERTYPENAME>")
         lines.append(f"<PARTYLEDGERNAME>{party}</PARTYLEDGERNAME>")
         lines.append(f"<ISCANCELLED>{'Yes' if is_cancelled else 'No'}</ISCANCELLED>")
-        lines.append(f"<ISOPTIONAL>No</ISOPTIONAL>")
+        lines.append("<ISOPTIONAL>No</ISOPTIONAL>")
         lines.append(f"<ISPOSTDATED>{'Yes' if is_postdated else 'No'}</ISPOSTDATED>")
         lines.append(f"<ISVOID>{'Yes' if is_void else 'No'}</ISVOID>")
         lines.append(f"<ENTEREDBY>{entered_by}</ENTEREDBY>")
@@ -207,24 +405,57 @@ def build_voucher_xml(vouchers: list | None = None) -> str:
         lines.append("<LEDGERENTRIES.LIST>")
         lines.append(f"<LEDGERNAME>{party}</LEDGERNAME>")
         lines.append(f"<ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>")
-        lines.append(f"<AMOUNT>{'-' if is_deemed_positive == 'No' else ''}{amount}</AMOUNT>")
+        lines.append(
+            f"<AMOUNT>{'-' if is_deemed_positive == 'No' else ''}{amount}</AMOUNT>"
+        )
+        if guid == "guid-v-001":
+            lines.append("<BILLALLOCATIONS.LIST>")
+            lines.append("<BILLTYPE>New Ref</BILLTYPE>")
+            lines.append(f"<NAME>{vnum}</NAME>")
+            lines.append(f"<AMOUNT>{amount}</AMOUNT>")
+            lines.append("<BILLCREDITPERIOD>")
+            lines.append("<INDAYS>30</INDAYS>")
+            lines.append("<INTEXT>30 Days</INTEXT>")
+            lines.append("</BILLCREDITPERIOD>")
+            lines.append("</BILLALLOCATIONS.LIST>")
+        if guid == "guid-v-002":
+            lines.append("<BILLALLOCATIONS.LIST>")
+            lines.append("<BILLTYPE>New Ref</BILLTYPE>")
+            lines.append(f"<NAME>{vnum}</NAME>")
+            lines.append(f"<AMOUNT>{amount}</AMOUNT>")
+            lines.append("</BILLALLOCATIONS.LIST>")
         lines.append("</LEDGERENTRIES.LIST>")
         if vtype in ("Sales", "Purchase"):
             lines.append("<LEDGERENTRIES.LIST>")
-            lines.append(f"<LEDGERNAME>{'Sales' if vtype == 'Sales' else 'Purchase'}</LEDGERNAME>")
-            lines.append(f"<ISDEEMEDPOSITIVE>{'No' if vtype == 'Sales' else 'Yes'}</ISDEEMEDPOSITIVE>")
+            lines.append(
+                f"<LEDGERNAME>"
+                f"{'Sales' if vtype == 'Sales' else 'Purchase'}</LEDGERNAME>"
+            )
+            lines.append(
+                f"<ISDEEMEDPOSITIVE>"
+                f"{'No' if vtype == 'Sales' else 'Yes'}</ISDEEMEDPOSITIVE>"
+            )
             lines.append(f"<AMOUNT>{'-' if vtype == 'Sales' else ''}{amount}</AMOUNT>")
+            if guid == "guid-v-004":
+                lines.append("<COSTCENTRE.LIST>")
+                lines.append("<COSTCENTRENAME>Head Office</COSTCENTRENAME>")
+                lines.append(f"<AMOUNT>{amount}</AMOUNT>")
+                lines.append("</COSTCENTRE.LIST>")
             lines.append("</LEDGERENTRIES.LIST>")
             if vtype == "Sales":
                 lines.append("<LEDGERENTRIES.LIST>")
                 lines.append("<LEDGERNAME>CGST</LEDGERNAME>")
                 lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
-                lines.append(f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>")
+                lines.append(
+                    f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
+                )
                 lines.append("</LEDGERENTRIES.LIST>")
                 lines.append("<LEDGERENTRIES.LIST>")
                 lines.append("<LEDGERNAME>SGST</LEDGERNAME>")
                 lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
-                lines.append(f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>")
+                lines.append(
+                    f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
+                )
                 lines.append("</LEDGERENTRIES.LIST>")
         if vtype in ("Sales", "Purchase") and guid in ("guid-v-001", "guid-v-002"):
             lines.append("<INVENTORYENTRIES.LIST>")
@@ -233,6 +464,92 @@ def build_voucher_xml(vouchers: list | None = None) -> str:
             lines.append(f"<RATE>{amount[:-3] if '.' in amount else amount}/Nos</RATE>")
             lines.append(f"<AMOUNT>{amount}</AMOUNT>")
             lines.append("</INVENTORYENTRIES.LIST>")
+        lines.append("</VOUCHER>")
+    lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
+    return "".join(lines)
+
+
+def build_voucher_xml_all_ledger(
+    vouchers: list | None = None,
+) -> str:
+    """Return Tally-format XML using ALLLEDGERENTRIES.LIST tags.
+
+    TallyPrime uses ALLLEDGERENTRIES.LIST for the complete list of ledger
+    entries in a voucher, while LEDGERENTRIES.LIST may only return a subset
+    depending on context. Both tags should be handled by the parser.
+    """
+    vouchers = vouchers or SAMPLE_VOUCHERS_ALL_LEDGER
+    lines = ["<ENVELOPE><BODY><DATA><TALLYMESSAGE>"]
+    for (
+        guid,
+        alter_id,
+        vtype,
+        vdate,
+        eff_date,
+        party,
+        vnum,
+        amount,
+        is_cancelled,
+        is_void,
+        is_postdated,
+        entered_by,
+    ) in vouchers:
+        is_deemed_positive = "Yes" if vtype in ("Sales", "Payment") else "No"
+        lines.append(f'<VOUCHER VCHTYPE="{vtype}" GUID="{guid}">')
+        lines.append(f"<ALTERID>{alter_id}</ALTERID>")
+        lines.append(f"<DATE>{vdate}</DATE>")
+        lines.append(f"<EFFECTIVEDATE>{eff_date}</EFFECTIVEDATE>")
+        lines.append(f"<VOUCHERNUMBER>{vnum}</VOUCHERNUMBER>")
+        lines.append(f"<VOUCHERTYPENAME>{vtype}</VOUCHERTYPENAME>")
+        lines.append(f"<PARTYLEDGERNAME>{party}</PARTYLEDGERNAME>")
+        lines.append(f"<ISCANCELLED>{'Yes' if is_cancelled else 'No'}</ISCANCELLED>")
+        lines.append("<ISOPTIONAL>No</ISOPTIONAL>")
+        lines.append(f"<ISPOSTDATED>{'Yes' if is_postdated else 'No'}</ISPOSTDATED>")
+        lines.append(f"<ISVOID>{'Yes' if is_void else 'No'}</ISVOID>")
+        lines.append(f"<ENTEREDBY>{entered_by}</ENTEREDBY>")
+        lines.append(f"<NARRATION>Invoice {vnum}</NARRATION>")
+        lines.append("<ALLLEDGERENTRIES.LIST>")
+        lines.append(f"<LEDGERNAME>{party}</LEDGERNAME>")
+        lines.append(f"<ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>")
+        lines.append(
+            f"<AMOUNT>{'-' if is_deemed_positive == 'No' else ''}{amount}</AMOUNT>"
+        )
+        lines.append("<BILLALLOCATIONS.LIST>")
+        lines.append("<BILLTYPE>New Ref</BILLTYPE>")
+        lines.append(f"<NAME>{vnum}</NAME>")
+        lines.append(f"<AMOUNT>{amount}</AMOUNT>")
+        lines.append("<BILLCREDITPERIOD>")
+        lines.append("<INDAYS>45</INDAYS>")
+        lines.append("<INTEXT>45 Days</INTEXT>")
+        lines.append("<DUEONDATE>20250530</DUEONDATE>")
+        lines.append("</BILLCREDITPERIOD>")
+        lines.append("</BILLALLOCATIONS.LIST>")
+        lines.append("</ALLLEDGERENTRIES.LIST>")
+        lines.append("<ALLLEDGERENTRIES.LIST>")
+        lines.append("<LEDGERNAME>Sales</LEDGERNAME>")
+        lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
+        lines.append(f"<AMOUNT>-{amount}</AMOUNT>")
+        lines.append("</ALLLEDGERENTRIES.LIST>")
+        lines.append("<ALLLEDGERENTRIES.LIST>")
+        lines.append("<LEDGERNAME>CGST</LEDGERNAME>")
+        lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
+        lines.append(
+            f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
+        )
+        lines.append("</ALLLEDGERENTRIES.LIST>")
+        lines.append("<ALLLEDGERENTRIES.LIST>")
+        lines.append("<LEDGERNAME>SGST</LEDGERNAME>")
+        lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
+        lines.append(
+            f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
+        )
+        lines.append("</ALLLEDGERENTRIES.LIST>")
+        lines.append("<ALLINVENTORYENTRIES.LIST>")
+        lines.append("<STOCKITEMNAME>Widget A</STOCKITEMNAME>")
+        lines.append("<ACTUALQTY>10 Nos</ACTUALQTY>")
+        lines.append(f"<RATE>{amount[:-3] if '.' in amount else amount}/Nos</RATE>")
+        lines.append(f"<AMOUNT>{amount}</AMOUNT>")
+        lines.append("</ALLINVENTORYENTRIES.LIST>")
         lines.append("</VOUCHER>")
     lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
     return "".join(lines)
@@ -248,10 +565,24 @@ def setup_mock_routes(httpserver) -> None:
 
     def _handler(request):
         if request.headers.get("X-Tally-Simulate-Error") == "true":
-            body = "<ENVELOPE><BODY><DATA><LINEERROR>Company not loaded</LINEERROR></DATA></BODY></ENVELOPE>"
-            return Response(body.encode("utf-16-le"), content_type="text/xml;charset=utf-16")
+            body = (
+                "<ENVELOPE><BODY><DATA><LINEERROR>"
+                "Company not loaded</LINEERROR>"
+                "</DATA></BODY></ENVELOPE>"
+            )
+            return Response(
+                body.encode("utf-8"), content_type="text/xml;charset=utf-8"
+            )
 
-        xml_body = request.data.decode("utf-8", errors="replace")
+        content_type = request.headers.get("Content-Type", "")
+        if "utf-16" in content_type.lower():
+            response_encoding = "utf-16-le"
+            response_ct = "text/xml;charset=utf-16"
+        else:
+            response_encoding = "utf-8"
+            response_ct = "text/xml;charset=utf-8"
+
+        xml_body = request.data.decode(response_encoding, errors="replace")
 
         if ">Group<" in xml_body:
             resp_xml = build_group_xml()
@@ -272,6 +603,8 @@ def setup_mock_routes(httpserver) -> None:
         else:
             resp_xml = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
 
-        return Response(resp_xml.encode("utf-16-le"), content_type="text/xml;charset=utf-16")
+        return Response(
+            resp_xml.encode(response_encoding), content_type=response_ct
+        )
 
     httpserver.expect_request("/").respond_with_handler(_handler)

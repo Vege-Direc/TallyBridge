@@ -3,7 +3,6 @@
 import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Any
 
 from loguru import logger
 
@@ -17,11 +16,16 @@ from tallybridge.models.master import (
     TallyVoucherType,
 )
 from tallybridge.models.report import OutstandingBill
-from tallybridge.models.voucher import TallyInventoryEntry, TallyVoucher, TallyVoucherEntry
+from tallybridge.models.voucher import (
+    TallyBillAllocation,
+    TallyCostCentreAllocation,
+    TallyInventoryEntry,
+    TallyVoucher,
+    TallyVoucherEntry,
+)
 
 
 class TallyXMLParser:
-
     @staticmethod
     def parse_amount(amount_str: str | None) -> Decimal:
         """Parse Tally amount string to signed Decimal.
@@ -67,7 +71,8 @@ class TallyXMLParser:
 
     @staticmethod
     def get_text(element: ET.Element | None, tag: str, default: str = "") -> str:
-        """Safely get text from a child tag or element attribute. Returns default if missing."""
+        """Safely get text from a child tag or attribute.
+        Returns default if missing."""
         if element is None:
             return default
         child = element.find(tag)
@@ -94,10 +99,16 @@ class TallyXMLParser:
                     guid=self.get_text(elem, "GUID"),
                     alter_id=int(self.get_text(elem, "ALTERID", "0")),
                     parent_group=self.get_text(elem, "PARENT"),
-                    opening_balance=self.parse_amount(self.get_text(elem, "OPENINGBALANCE")),
-                    closing_balance=self.parse_amount(self.get_text(elem, "CLOSINGBALANCE")),
+                    opening_balance=self.parse_amount(
+                        self.get_text(elem, "OPENINGBALANCE")
+                    ),
+                    closing_balance=self.parse_amount(
+                        self.get_text(elem, "CLOSINGBALANCE")
+                    ),
                     is_revenue=self.parse_bool(self.get_text(elem, "ISREVENUE")),
-                    affects_gross_profit=self.parse_bool(self.get_text(elem, "AFFECTSGROSSPROFIT")),
+                    affects_gross_profit=self.parse_bool(
+                        self.get_text(elem, "AFFECTSGROSSPROFIT")
+                    ),
                     gstin=self.get_text(elem, "GSTIN") or None,
                     party_name=self.get_text(elem, "LEDMAILINGNAME") or None,
                 )
@@ -124,7 +135,9 @@ class TallyXMLParser:
                     parent=self.get_text(elem, "PARENT"),
                     primary_group=self.get_text(elem, "PRIMARYGROUP"),
                     is_revenue=self.parse_bool(self.get_text(elem, "ISREVENUE")),
-                    affects_gross_profit=self.parse_bool(self.get_text(elem, "AFFECTSGROSSPROFIT")),
+                    affects_gross_profit=self.parse_bool(
+                        self.get_text(elem, "AFFECTSGROSSPROFIT")
+                    ),
                     net_debit_credit=self.get_text(elem, "NETDEBITCREDIT", "Dr"),
                 )
                 groups.append(group)
@@ -154,7 +167,9 @@ class TallyXMLParser:
                     gst_rate=self.parse_amount(self.get_text(elem, "GSTRATE")) or None,
                     hsn_code=self.get_text(elem, "HSNCODE") or None,
                     closing_quantity=closing_qty,
-                    closing_value=self.parse_amount(self.get_text(elem, "CLOSINGVALUE")),
+                    closing_value=self.parse_amount(
+                        self.get_text(elem, "CLOSINGVALUE")
+                    ),
                 )
                 items.append(stock_item)
             except Exception as exc:
@@ -224,7 +239,9 @@ class TallyXMLParser:
                     guid=self.get_text(elem, "GUID"),
                     alter_id=int(self.get_text(elem, "ALTERID", "0")),
                     parent=self.get_text(elem, "PARENT"),
-                    should_quantities_add=self.parse_bool(self.get_text(elem, "SHOULDQUANTITIESADD")),
+                    should_quantities_add=self.parse_bool(
+                        self.get_text(elem, "SHOULDQUANTITIESADD")
+                    ),
                 )
                 groups.append(sg)
             except Exception as exc:
@@ -261,7 +278,8 @@ class TallyXMLParser:
         Each <VOUCHER> element contains:
         - Direct fields: GUID, ALTERID, DATE, VOUCHERNUMBER, VOUCHERTYPENAME, etc.
         - <LEDGERENTRIES.LIST> sub-elements with LEDGERNAME and AMOUNT
-        - <INVENTORYENTRIES.LIST> sub-elements with STOCKITEMNAME, ACTUALQTY, RATE, AMOUNT
+        - <INVENTORYENTRIES.LIST> sub-elements with
+          STOCKITEMNAME, ACTUALQTY, RATE, AMOUNT
         """
         try:
             root = ET.fromstring(xml)
@@ -274,12 +292,18 @@ class TallyXMLParser:
             try:
                 ledger_entries = self._parse_ledger_entries(elem)
                 inventory_entries = self._parse_inventory_entries(elem)
+                cost_centre_allocations = self._parse_cost_centre_allocations(elem)
+                bill_allocations = self._parse_bill_allocations(elem)
                 total_amount = sum(
                     (e.amount for e in ledger_entries if e.amount > 0),
                     Decimal("0"),
                 )
                 gst_amount = sum(
-                    (e.amount for e in ledger_entries if "GST" in e.ledger_name.upper()),
+                    (
+                        e.amount
+                        for e in ledger_entries
+                        if "GST" in e.ledger_name.upper()
+                    ),
                     Decimal("0"),
                 )
                 voucher = TallyVoucher(
@@ -288,7 +312,9 @@ class TallyXMLParser:
                     voucher_number=self.get_text(elem, "VOUCHERNUMBER"),
                     voucher_type=self.get_text(elem, "VOUCHERTYPENAME"),
                     date=self.parse_date(self.get_text(elem, "DATE")) or date.today(),
-                    effective_date=self.parse_date(self.get_text(elem, "EFFECTIVEDATE")),
+                    effective_date=self.parse_date(
+                        self.get_text(elem, "EFFECTIVEDATE")
+                    ),
                     reference=self.get_text(elem, "REFERENCE") or None,
                     narration=self.get_text(elem, "NARRATION") or None,
                     is_cancelled=self.parse_bool(self.get_text(elem, "ISCANCELLED")),
@@ -302,6 +328,8 @@ class TallyXMLParser:
                     entered_by=self.get_text(elem, "ENTEREDBY") or None,
                     ledger_entries=ledger_entries,
                     inventory_entries=inventory_entries,
+                    cost_centre_allocations=cost_centre_allocations,
+                    bill_allocations=bill_allocations,
                     total_amount=abs(total_amount),
                     gst_amount=abs(gst_amount),
                 )
@@ -323,10 +351,13 @@ class TallyXMLParser:
             try:
                 bill = OutstandingBill(
                     party_name=self.get_text(elem, "PARTYNAME"),
-                    bill_date=self.parse_date(self.get_text(elem, "DATE")) or date.today(),
+                    bill_date=self.parse_date(self.get_text(elem, "DATE"))
+                    or date.today(),
                     bill_number=self.get_text(elem, "BILLNUMBER"),
                     bill_amount=self.parse_amount(self.get_text(elem, "BILLAMOUNT")),
-                    outstanding_amount=self.parse_amount(self.get_text(elem, "OUTSTANDINGAMOUNT")),
+                    outstanding_amount=self.parse_amount(
+                        self.get_text(elem, "OUTSTANDINGAMOUNT")
+                    ),
                     voucher_type=self.get_text(elem, "VOUCHERTYPENAME", "Sales"),
                 )
                 bills.append(bill)
@@ -334,16 +365,29 @@ class TallyXMLParser:
                 logger.warning("Failed to parse bill element: {}", exc)
         return bills
 
-    def _parse_ledger_entries(self, voucher_elem: ET.Element) -> list[TallyVoucherEntry]:
+    def _parse_ledger_entries(
+        self, voucher_elem: ET.Element
+    ) -> list[TallyVoucherEntry]:
         entries: list[TallyVoucherEntry] = []
         for entry in voucher_elem.findall("LEDGERENTRIES.LIST"):
             name = self.get_text(entry, "LEDGERNAME")
             amount_text = self.get_text(entry, "AMOUNT")
             amount = self.parse_amount(amount_text)
+            if amount == Decimal("0"):
+                amount = self._parse_complex_amount(entry, "AMOUNT")
+            entries.append(TallyVoucherEntry(ledger_name=name, amount=amount))
+        for entry in voucher_elem.findall("ALLLEDGERENTRIES.LIST"):
+            name = self.get_text(entry, "LEDGERNAME")
+            amount_text = self.get_text(entry, "AMOUNT")
+            amount = self.parse_amount(amount_text)
+            if amount == Decimal("0"):
+                amount = self._parse_complex_amount(entry, "AMOUNT")
             entries.append(TallyVoucherEntry(ledger_name=name, amount=amount))
         return entries
 
-    def _parse_inventory_entries(self, voucher_elem: ET.Element) -> list[TallyInventoryEntry]:
+    def _parse_inventory_entries(
+        self, voucher_elem: ET.Element
+    ) -> list[TallyInventoryEntry]:
         entries: list[TallyInventoryEntry] = []
         for entry in voucher_elem.findall("INVENTORYENTRIES.LIST"):
             name = self.get_text(entry, "STOCKITEMNAME")
@@ -351,6 +395,28 @@ class TallyXMLParser:
             qty = self.parse_quantity(qty_text)
             rate = self.parse_rate(self.get_text(entry, "RATE"))
             amount = self.parse_amount(self.get_text(entry, "AMOUNT"))
+            if amount == Decimal("0"):
+                amount = self._parse_complex_amount(entry, "AMOUNT")
+            godown = self.get_text(entry, "GODOWN") or None
+            batch = self.get_text(entry, "BATCH") or None
+            entries.append(
+                TallyInventoryEntry(
+                    stock_item_name=name,
+                    quantity=qty,
+                    rate=rate,
+                    amount=amount,
+                    godown=godown,
+                    batch=batch,
+                )
+            )
+        for entry in voucher_elem.findall("ALLINVENTORYENTRIES.LIST"):
+            name = self.get_text(entry, "STOCKITEMNAME")
+            qty_text = self.get_text(entry, "ACTUALQTY")
+            qty = self.parse_quantity(qty_text)
+            rate = self.parse_rate(self.get_text(entry, "RATE"))
+            amount = self.parse_amount(self.get_text(entry, "AMOUNT"))
+            if amount == Decimal("0"):
+                amount = self._parse_complex_amount(entry, "AMOUNT")
             godown = self.get_text(entry, "GODOWN") or None
             batch = self.get_text(entry, "BATCH") or None
             entries.append(
@@ -364,6 +430,183 @@ class TallyXMLParser:
                 )
             )
         return entries
+
+    def _parse_cost_centre_allocations(
+        self, voucher_elem: ET.Element
+    ) -> list[TallyCostCentreAllocation]:
+        """Extract cost centre allocations from ledger entries.
+
+        Note: COSTCENTRE.LIST and CATEGORYALLOCATIONS.LIST only appear in
+        Tally's XML response if the company has cost centres enabled
+        (F11 > Inventory Features > Cost Centres). This is a functional
+        limitation — if cost centres are not enabled in Tally, these
+        sub-collections will simply not be present in the XML response.
+        """
+        allocations: list[TallyCostCentreAllocation] = []
+        for entry in voucher_elem.findall("LEDGERENTRIES.LIST"):
+            ledger_name = self.get_text(entry, "LEDGERNAME")
+            for cc_elem in entry.findall("COSTCENTRE.LIST"):
+                cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
+                amount = self.parse_amount(self.get_text(cc_elem, "AMOUNT"))
+                if amount == Decimal("0"):
+                    amount = self._parse_complex_amount(cc_elem, "AMOUNT")
+                allocations.append(
+                    TallyCostCentreAllocation(
+                        ledger_name=ledger_name,
+                        cost_centre=cc_name,
+                        amount=amount,
+                    )
+                )
+            for cat_elem in entry.findall("CATEGORYALLOCATIONS.LIST"):
+                for cc_elem in cat_elem.findall("COSTCENTRE.LIST"):
+                    cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
+                    amount = self.parse_amount(
+                        self.get_text(cc_elem, "AMOUNT")
+                    )
+                    if amount == Decimal("0"):
+                        amount = self._parse_complex_amount(cc_elem, "AMOUNT")
+                    allocations.append(
+                        TallyCostCentreAllocation(
+                            ledger_name=ledger_name,
+                            cost_centre=cc_name,
+                            amount=amount,
+                        )
+                    )
+        for entry in voucher_elem.findall("ALLLEDGERENTRIES.LIST"):
+            ledger_name = self.get_text(entry, "LEDGERNAME")
+            for cc_elem in entry.findall("COSTCENTRE.LIST"):
+                cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
+                amount = self.parse_amount(self.get_text(cc_elem, "AMOUNT"))
+                if amount == Decimal("0"):
+                    amount = self._parse_complex_amount(cc_elem, "AMOUNT")
+                allocations.append(
+                    TallyCostCentreAllocation(
+                        ledger_name=ledger_name,
+                        cost_centre=cc_name,
+                        amount=amount,
+                    )
+                )
+            for cat_elem in entry.findall("CATEGORYALLOCATIONS.LIST"):
+                for cc_elem in cat_elem.findall("COSTCENTRE.LIST"):
+                    cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
+                    amount = self.parse_amount(
+                        self.get_text(cc_elem, "AMOUNT")
+                    )
+                    if amount == Decimal("0"):
+                        amount = self._parse_complex_amount(cc_elem, "AMOUNT")
+                    allocations.append(
+                        TallyCostCentreAllocation(
+                            ledger_name=ledger_name,
+                            cost_centre=cc_name,
+                            amount=amount,
+                        )
+                    )
+        return allocations
+
+    def _parse_bill_allocations(
+        self, voucher_elem: ET.Element
+    ) -> list[TallyBillAllocation]:
+        """Extract bill allocations from ledger entries.
+
+        Note: BILLALLOCATIONS.LIST only appears in Tally's XML response if
+        bill-wise breakup is enabled for the ledger's group (F11 > Accounting
+        Features > Maintain Bill-wise Details). This is a functional
+        limitation — if bill-wise breakup is not enabled, this sub-collection
+        will not be present in the XML response.
+        """
+        allocations: list[TallyBillAllocation] = []
+        for entry in voucher_elem.findall("LEDGERENTRIES.LIST"):
+            ledger_name = self.get_text(entry, "LEDGERNAME")
+            for bill_elem in entry.findall("BILLALLOCATIONS.LIST"):
+                bill_type = self.get_text(bill_elem, "BILLTYPE") or None
+                bill_name = self.get_text(bill_elem, "NAME")
+                amount = self.parse_amount(
+                    self.get_text(bill_elem, "AMOUNT")
+                )
+                if amount == Decimal("0"):
+                    amount = self._parse_complex_amount(bill_elem, "AMOUNT")
+                bill_credit_period = self._parse_bill_credit_period(bill_elem)
+                allocations.append(
+                    TallyBillAllocation(
+                        ledger_name=ledger_name,
+                        bill_name=bill_name,
+                        amount=amount,
+                        bill_type=bill_type,
+                        bill_credit_period=bill_credit_period,
+                    )
+                )
+        for entry in voucher_elem.findall("ALLLEDGERENTRIES.LIST"):
+            ledger_name = self.get_text(entry, "LEDGERNAME")
+            for bill_elem in entry.findall("BILLALLOCATIONS.LIST"):
+                bill_type = self.get_text(bill_elem, "BILLTYPE") or None
+                bill_name = self.get_text(bill_elem, "NAME")
+                amount = self.parse_amount(
+                    self.get_text(bill_elem, "AMOUNT")
+                )
+                if amount == Decimal("0"):
+                    amount = self._parse_complex_amount(bill_elem, "AMOUNT")
+                bill_credit_period = self._parse_bill_credit_period(bill_elem)
+                allocations.append(
+                    TallyBillAllocation(
+                        ledger_name=ledger_name,
+                        bill_name=bill_name,
+                        amount=amount,
+                        bill_type=bill_type,
+                        bill_credit_period=bill_credit_period,
+                    )
+                )
+        return allocations
+
+    def _parse_complex_amount(
+        self, parent: ET.Element, tag: str
+    ) -> Decimal:
+        amount_elem = parent.find(tag)
+        if amount_elem is None:
+            return Decimal("0")
+        inner = amount_elem.find("AMOUNT")
+        if inner is not None and inner.text:
+            return self.parse_amount(inner.text.strip())
+        is_debit_elem = amount_elem.find("ISDEBIT")
+        raw = (
+            inner.text.strip()
+            if inner is not None and inner.text
+            else amount_elem.text
+        )
+        if raw and is_debit_elem is not None:
+            val = self.parse_amount(raw)
+            if is_debit_elem.text and is_debit_elem.text.strip().lower() == "false":
+                val = -abs(val)
+            return val
+        return Decimal("0")
+
+    @staticmethod
+    def _parse_bill_credit_period(bill_elem: ET.Element) -> int | None:
+        bcp = bill_elem.find("BILLCREDITPERIOD")
+        if bcp is None:
+            return None
+        in_days = bcp.find("INDAYS")
+        if in_days is not None and in_days.text:
+            try:
+                return int(in_days.text.strip())
+            except ValueError:
+                pass
+        if bcp.text:
+            try:
+                return int(bcp.text.strip())
+            except ValueError:
+                pass
+        due_on_date = bcp.find("DUEONDATE")
+        if due_on_date is not None and due_on_date.text:
+            date_val = TallyXMLParser.parse_date(due_on_date.text.strip())
+            if date_val is not None:
+                bill_date_elem = bill_elem.find("BILLDATE")
+                if bill_date_elem is not None and bill_date_elem.text:
+                    bill_date = TallyXMLParser.parse_date(
+                        bill_date_elem.text.strip()
+                    )
+                    if bill_date is not None:
+                        return (date_val - bill_date).days
+        return None
 
     @staticmethod
     def parse_quantity(qty_str: str | None) -> Decimal:

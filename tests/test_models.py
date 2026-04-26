@@ -28,7 +28,6 @@ from tallybridge.models.voucher import (
     TallyVoucherEntry,
 )
 
-
 # ── Master models ─────────────────────────────────────────────────────────
 
 
@@ -119,7 +118,9 @@ class TestMaster:
         assert unit.symbol is None
 
     def test_tally_stock_group_instantiates(self) -> None:
-        sg = TallyStockGroup(name="Stock-in-Trade", guid="g6", alter_id=6, parent="Primary")
+        sg = TallyStockGroup(
+            name="Stock-in-Trade", guid="g6", alter_id=6, parent="Primary"
+        )
         assert sg.should_quantities_add is True
 
     def test_tally_cost_center_all_none(self) -> None:
@@ -145,12 +146,22 @@ class TestVoucher:
 
     def test_voucher_entries_not_shared_mutable_default(self) -> None:
         v1 = TallyVoucher(
-            guid="v1", alter_id=1, voucher_number="1", voucher_type="S", date=date(2025, 1, 1)
+            guid="v1",
+            alter_id=1,
+            voucher_number="1",
+            voucher_type="S",
+            date=date(2025, 1, 1),
         )
         v2 = TallyVoucher(
-            guid="v2", alter_id=2, voucher_number="2", voucher_type="S", date=date(2025, 1, 1)
+            guid="v2",
+            alter_id=2,
+            voucher_number="2",
+            voucher_type="S",
+            date=date(2025, 1, 1),
         )
-        v1.ledger_entries.append(TallyVoucherEntry(ledger_name="Cash", amount=Decimal("100")))
+        v1.ledger_entries.append(
+            TallyVoucherEntry(ledger_name="Cash", amount=Decimal("100"))
+        )
         assert len(v2.ledger_entries) == 0
 
     def test_is_cancelled_roundtrip(self) -> None:

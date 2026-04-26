@@ -1,8 +1,9 @@
 """DuckDB cache layer — see SPECS.md §6."""
 
 import os
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
+from typing import Any
 
 import duckdb
 from loguru import logger
@@ -18,7 +19,9 @@ from tallybridge.models.master import (
     TallyVoucherType,
 )
 from tallybridge.models.report import OutstandingBill, TrialBalanceLine
-from tallybridge.models.voucher import TallyInventoryEntry, TallyVoucher, TallyVoucherEntry
+from tallybridge.models.voucher import (
+    TallyVoucher,
+)
 
 SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS mst_ledger (
@@ -157,7 +160,44 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 """
 
-MIGRATIONS: list[tuple[int, str, str]] = []
+MIGRATIONS: list[tuple[int, str, str]] = [
+    (
+        1,
+        "add trn_cost_centre junction table",
+        """CREATE TABLE IF NOT EXISTS trn_cost_centre (
+    id              BIGINT DEFAULT nextval('seq_entry_id') PRIMARY KEY,
+    voucher_guid    TEXT NOT NULL REFERENCES trn_voucher(guid),
+    ledger_name     TEXT NOT NULL,
+    cost_centre     TEXT NOT NULL,
+    amount          DECIMAL(18,4) NOT NULL
+);""",
+    ),
+    (
+        2,
+        "add trn_bill allocations table",
+        """CREATE TABLE IF NOT EXISTS trn_bill (
+    id              BIGINT DEFAULT nextval('seq_entry_id') PRIMARY KEY,
+    voucher_guid    TEXT NOT NULL REFERENCES trn_voucher(guid),
+    ledger_name     TEXT NOT NULL,
+    bill_name       TEXT NOT NULL,
+    amount          DECIMAL(18,4) NOT NULL,
+    bill_type       TEXT,
+    bill_credit_period INTEGER
+);""",
+    ),
+    (
+        3,
+        "add company column to all tables",
+        """ALTER TABLE mst_ledger ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_group ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_stock_item ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_voucher_type ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_unit ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_stock_group ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS company TEXT;""",
+    ),
+]
 
 
 class TallyCache:
@@ -196,10 +236,16 @@ class TallyCache:
                  is_revenue, affects_gross_profit, gstin, party_name)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    ledger.guid, ledger.alter_id, ledger.name, ledger.parent_group,
-                    float(ledger.opening_balance), float(ledger.closing_balance),
-                    ledger.is_revenue, ledger.affects_gross_profit,
-                    ledger.gstin, ledger.party_name,
+                    ledger.guid,
+                    ledger.alter_id,
+                    ledger.name,
+                    ledger.parent_group,
+                    ledger.opening_balance,
+                    ledger.closing_balance,
+                    ledger.is_revenue,
+                    ledger.affects_gross_profit,
+                    ledger.gstin,
+                    ledger.party_name,
                 ],
             )
             count += 1
@@ -214,9 +260,14 @@ class TallyCache:
                  affects_gross_profit, net_debit_credit)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    group.guid, group.alter_id, group.name, group.parent,
-                    group.primary_group, group.is_revenue,
-                    group.affects_gross_profit, group.net_debit_credit,
+                    group.guid,
+                    group.alter_id,
+                    group.name,
+                    group.parent,
+                    group.primary_group,
+                    group.is_revenue,
+                    group.affects_gross_profit,
+                    group.net_debit_credit,
                 ],
             )
             count += 1
@@ -231,11 +282,17 @@ class TallyCache:
                  opening_quantity, opening_rate, closing_quantity, closing_value)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    item.guid, item.alter_id, item.name, item.parent_group,
-                    item.unit, float(item.gst_rate) if item.gst_rate else None,
+                    item.guid,
+                    item.alter_id,
+                    item.name,
+                    item.parent_group,
+                    item.unit,
+                    item.gst_rate if item.gst_rate is not None else None,
                     item.hsn_code,
-                    float(item.opening_quantity), float(item.opening_rate),
-                    float(item.closing_quantity), float(item.closing_value),
+                    item.opening_quantity,
+                    item.opening_rate,
+                    item.closing_quantity,
+                    item.closing_value,
                 ],
             )
             count += 1
@@ -245,8 +302,8 @@ class TallyCache:
         count = 0
         for vt in vtypes:
             self.conn.execute(
-                """INSERT OR REPLACE INTO mst_voucher_type (guid, alter_id, name, parent)
-                VALUES (?, ?, ?, ?)""",
+                """INSERT OR REPLACE INTO mst_voucher_type
+                (guid, alter_id, name, parent) VALUES (?, ?, ?, ?)""",
                 [vt.guid, vt.alter_id, vt.name, vt.parent],
             )
             count += 1
@@ -260,8 +317,13 @@ class TallyCache:
                 (guid, alter_id, name, unit_type, base_units, decimal_places, symbol)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    unit.guid, unit.alter_id, unit.name, unit.unit_type,
-                    unit.base_units, unit.decimal_places, unit.symbol,
+                    unit.guid,
+                    unit.alter_id,
+                    unit.name,
+                    unit.unit_type,
+                    unit.base_units,
+                    unit.decimal_places,
+                    unit.symbol,
                 ],
             )
             count += 1
@@ -286,12 +348,21 @@ class TallyCache:
                 """INSERT OR REPLACE INTO mst_cost_center
                 (guid, alter_id, name, parent, email, cost_centre_type)
                 VALUES (?, ?, ?, ?, ?, ?)""",
-                [cc.guid, cc.alter_id, cc.name, cc.parent, cc.email, cc.cost_centre_type],
+                [
+                    cc.guid,
+                    cc.alter_id,
+                    cc.name,
+                    cc.parent,
+                    cc.email,
+                    cc.cost_centre_type,
+                ],
             )
             count += 1
         return count
 
-    def upsert_vouchers(self, vouchers: list[TallyVoucher]) -> int:
+    def upsert_vouchers(
+        self, vouchers: list[TallyVoucher], company: str | None = None
+    ) -> int:
         """Upsert vouchers and replace their child entries atomically."""
         count = 0
         for voucher in vouchers:
@@ -306,39 +377,86 @@ class TallyCache:
                     [voucher.guid],
                 )
                 self.conn.execute(
+                    "DELETE FROM trn_cost_centre WHERE voucher_guid = ?",
+                    [voucher.guid],
+                )
+                self.conn.execute(
+                    "DELETE FROM trn_bill WHERE voucher_guid = ?",
+                    [voucher.guid],
+                )
+                self.conn.execute(
                     """INSERT OR REPLACE INTO trn_voucher
-                    (guid, alter_id, voucher_number, voucher_type, date, effective_date,
-                     reference, narration, party_ledger, party_gstin, place_of_supply,
-                     due_date, entered_by, is_cancelled, is_optional, is_postdated,
-                     is_void, total_amount, gst_amount)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (guid, alter_id, voucher_number, voucher_type, date,
+                     effective_date, reference, narration, party_ledger,
+                     party_gstin, place_of_supply, due_date, entered_by,
+                     is_cancelled, is_optional, is_postdated, is_void,
+                     total_amount, gst_amount, company)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     [
-                        voucher.guid, voucher.alter_id, voucher.voucher_number,
-                        voucher.voucher_type, str(voucher.date),
+                        voucher.guid,
+                        voucher.alter_id,
+                        voucher.voucher_number,
+                        voucher.voucher_type,
+                        str(voucher.date),
                         str(voucher.effective_date) if voucher.effective_date else None,
-                        voucher.reference, voucher.narration, voucher.party_ledger,
-                        voucher.party_gstin, voucher.place_of_supply,
+                        voucher.reference,
+                        voucher.narration,
+                        voucher.party_ledger,
+                        voucher.party_gstin,
+                        voucher.place_of_supply,
                         str(voucher.due_date) if voucher.due_date else None,
-                        voucher.entered_by, voucher.is_cancelled, voucher.is_optional,
-                        voucher.is_postdated, voucher.is_void,
-                        float(voucher.total_amount), float(voucher.gst_amount),
+                        voucher.entered_by,
+                        voucher.is_cancelled,
+                        voucher.is_optional,
+                        voucher.is_postdated,
+                        voucher.is_void,
+                        voucher.total_amount,
+                        voucher.gst_amount,
+                        company,
                     ],
                 )
                 for entry in voucher.ledger_entries:
                     self.conn.execute(
-                        """INSERT INTO trn_ledger_entry (voucher_guid, ledger_name, amount)
-                        VALUES (?, ?, ?)""",
-                        [voucher.guid, entry.ledger_name, float(entry.amount)],
+                        """INSERT INTO trn_ledger_entry
+                        (voucher_guid, ledger_name, amount) VALUES (?, ?, ?)""",
+                        [voucher.guid, entry.ledger_name, entry.amount],
                     )
-                for entry in voucher.inventory_entries:
+                for entry in voucher.inventory_entries:  # type: ignore[assignment]
                     self.conn.execute(
                         """INSERT INTO trn_inventory_entry
-                        (voucher_guid, stock_item_name, quantity, rate, amount, godown, batch)
+                        (voucher_guid, stock_item_name, quantity,
+                         rate, amount, godown, batch)
                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         [
-                            voucher.guid, entry.stock_item_name,
-                            float(entry.quantity), float(entry.rate), float(entry.amount),
-                            entry.godown, entry.batch,
+                            voucher.guid,
+                            entry.stock_item_name,  # type: ignore[attr-defined]
+                            entry.quantity,  # type: ignore[attr-defined]
+                            entry.rate,  # type: ignore[attr-defined]
+                            entry.amount,
+                            entry.godown,  # type: ignore[attr-defined]
+                            entry.batch,  # type: ignore[attr-defined]
+                        ],
+                    )
+                for cc in voucher.cost_centre_allocations:  # type: ignore[attr-defined]
+                    self.conn.execute(
+                        """INSERT INTO trn_cost_centre
+                        (voucher_guid, ledger_name, cost_centre, amount)
+                        VALUES (?, ?, ?, ?)""",
+                        [voucher.guid, cc.ledger_name, cc.cost_centre, cc.amount],
+                    )
+                for bill in voucher.bill_allocations:  # type: ignore[attr-defined]
+                    self.conn.execute(
+                        """INSERT INTO trn_bill
+                        (voucher_guid, ledger_name, bill_name, amount,
+                         bill_type, bill_credit_period)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                        [
+                            voucher.guid,
+                            bill.ledger_name,
+                            bill.bill_name,
+                            bill.amount,
+                            bill.bill_type,
+                            bill.bill_credit_period,
                         ],
                     )
                 self.conn.commit()
@@ -361,15 +479,18 @@ class TallyCache:
     ) -> None:
         """Upsert a sync_state row after successful sync."""
         self.conn.execute(
-            """INSERT OR REPLACE INTO sync_state (entity_type, last_alter_id, last_sync_at, record_count)
+            """INSERT OR REPLACE INTO sync_state
+            (entity_type, last_alter_id, last_sync_at, record_count)
             VALUES (?, ?, current_timestamp, ?)""",
             [entity_type, last_alter_id, record_count],
         )
 
-    def get_sync_status(self) -> dict[str, dict]:
-        """Return {entity_type: {last_alter_id, last_sync_at, record_count}} for all rows."""
+    def get_sync_status(self) -> dict[str, dict[str, Any]]:
+        """Return {entity_type: {last_alter_id, last_sync_at, record_count}}
+        for all rows."""
         rows = self.conn.execute(
-            "SELECT entity_type, last_alter_id, last_sync_at, record_count FROM sync_state"
+            "SELECT entity_type, last_alter_id, last_sync_at, "
+            "record_count FROM sync_state"
         ).fetchall()
         return {
             row[0]: {
@@ -380,25 +501,25 @@ class TallyCache:
             for row in rows
         }
 
-    def query(self, sql: str, params: list | None = None) -> list[dict]:
+    def query(self, sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         """Execute parameterised SELECT, return list of row dicts. Read-only."""
         try:
             result = self.conn.execute(sql, params or [])
             columns = [desc[0] for desc in result.description]
-            return [dict(zip(columns, row)) for row in result.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
         except Exception as exc:
             logger.warning("Query failed: {}", exc)
             raise TallyBridgeCacheError(str(exc)) from exc
 
     def get_ledger(self, name: str) -> TallyLedger | None:
-        rows = self.query(
-            "SELECT * FROM mst_ledger WHERE name = ?", [name]
-        )
+        rows = self.query("SELECT * FROM mst_ledger WHERE name = ?", [name])
         if not rows:
             return None
         r = rows[0]
         return TallyLedger(
-            guid=r["guid"], alter_id=r["alter_id"], name=r["name"],
+            guid=r["guid"],
+            alter_id=r["alter_id"],
+            name=r["name"],
             parent_group=r["parent_group"] or "",
             opening_balance=Decimal(str(r["opening_balance"] or 0)),
             closing_balance=Decimal(str(r["closing_balance"] or 0)),
@@ -445,7 +566,9 @@ class TallyCache:
             )
         return bills
 
-    def get_trial_balance(self, from_date: date, to_date: date) -> list[TrialBalanceLine]:
+    def get_trial_balance(
+        self, from_date: date, to_date: date
+    ) -> list[TrialBalanceLine]:
         rows = self.query(
             """SELECT l.name as ledger, l.parent_group as group_name,
                       l.opening_balance, l.closing_balance
@@ -472,11 +595,19 @@ class TallyCache:
             )
         return lines
 
-    def health_check(self) -> dict:
+    def health_check(self) -> dict[str, Any]:
         """Return {record_counts, last_sync_times, db_size_mb, schema_version}."""
         tables = [
-            "mst_ledger", "mst_group", "mst_stock_item", "mst_voucher_type",
-            "mst_unit", "mst_stock_group", "mst_cost_center", "trn_voucher",
+            "mst_ledger",
+            "mst_group",
+            "mst_stock_item",
+            "mst_voucher_type",
+            "mst_unit",
+            "mst_stock_group",
+            "mst_cost_center",
+            "trn_voucher",
+            "trn_cost_centre",
+            "trn_bill",
         ]
         record_counts: dict[str, int] = {}
         for t in tables:
@@ -497,6 +628,54 @@ class TallyCache:
             "db_size_mb": round(db_size_mb, 2),
             "schema_version": 0,
         }
+
+    def query_readonly(
+        self, sql: str, params: list[Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """Execute SQL query with read-only enforcement.
+
+        DuckDB does not support concurrent read-only and read-write connections
+        to the same file within a single process, nor does ATTACH allow
+        attaching the same file twice. Instead, we enforce read-only by:
+
+        1. Beginning a read-only transaction (BEGIN READ ONLY)
+        2. Executing the query
+        3. Aborting the transaction (ROLLBACK)
+
+        This ensures no writes can occur during query execution.
+        If BEGIN READ ONLY fails (e.g. inside an existing transaction),
+        falls back to executing directly.
+        """
+        try:
+            self.conn.execute("BEGIN READ ONLY")
+        except Exception:
+            try:
+                self.conn.execute("COMMIT")
+            except Exception:
+                pass
+            try:
+                self.conn.execute("BEGIN READ ONLY")
+            except Exception:
+                result = self.conn.execute(sql, params or [])
+                columns = [desc[0] for desc in result.description]
+                return [
+                    dict(zip(columns, row, strict=False))
+                    for row in result.fetchall()
+                ]
+
+        try:
+            result = self.conn.execute(sql, params or [])
+            columns = [desc[0] for desc in result.description]
+            rows = [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
+            return rows
+        except Exception as exc:
+            logger.warning("Read-only query failed: {}", exc)
+            raise TallyBridgeCacheError(str(exc)) from exc
+        finally:
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                pass
 
     def close(self) -> None:
         if self._conn is not None:

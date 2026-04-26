@@ -1,8 +1,8 @@
 """Public query API — see SPECS.md §8."""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from tallybridge.cache import TallyCache
 from tallybridge.models.master import TallyStockItem
@@ -39,21 +39,29 @@ class TallyQuery:
         cash_bal = self.get_cash_balance(as_of_date)
         bank_bal = self.get_bank_balance(as_of_date)
         receivables = self.get_receivables(as_of_date, overdue_only=True)
-        top_overdue = sorted(receivables, key=lambda b: b.overdue_days, reverse=True)[:5]
+        top_overdue = sorted(receivables, key=lambda b: b.overdue_days, reverse=True)[
+            :5
+        ]
         low_stock = self.get_low_stock_items()
 
         return DailyDigest(
             company="TallyBridge",
             digest_date=as_of_date,
-            total_sales=Decimal(str(sales_rows[0]["total"])) if sales_rows else Decimal("0"),
-            total_purchases=Decimal(str(purchase_rows[0]["total"])) if purchase_rows else Decimal("0"),
+            total_sales=Decimal(str(sales_rows[0]["total"]))
+            if sales_rows
+            else Decimal("0"),
+            total_purchases=Decimal(str(purchase_rows[0]["total"]))
+            if purchase_rows
+            else Decimal("0"),
             cash_balance=cash_bal,
             bank_balance=bank_bal,
             top_overdue_receivables=top_overdue,
             low_stock_items=[i.name for i in low_stock],
         )
 
-    def get_ledger_balance(self, ledger_name: str, as_of_date: date | None = None) -> Decimal:
+    def get_ledger_balance(
+        self, ledger_name: str, as_of_date: date | None = None
+    ) -> Decimal:
         """Closing balance as of date. Positive = Dr, Negative = Cr."""
         return self._cache.get_ledger_balance(ledger_name)
 
@@ -73,7 +81,9 @@ class TallyQuery:
         )
         return Decimal(str(rows[0]["total"])) if rows else Decimal("0")
 
-    def get_trial_balance(self, from_date: date, to_date: date) -> list[TrialBalanceLine]:
+    def get_trial_balance(
+        self, from_date: date, to_date: date
+    ) -> list[TrialBalanceLine]:
         """Trial balance for the period."""
         return self._cache.get_trial_balance(from_date, to_date)
 
@@ -114,7 +124,7 @@ class TallyQuery:
             result.append(bill)
         return result
 
-    def get_party_outstanding(self, party_name: str) -> dict:
+    def get_party_outstanding(self, party_name: str) -> dict[str, Any]:
         """Full position for one party."""
         receivables = [b for b in self.get_receivables() if b.party_name == party_name]
         payables = [b for b in self.get_payables() if b.party_name == party_name]
@@ -132,7 +142,7 @@ class TallyQuery:
         from_date: date,
         to_date: date,
         group_by: Literal["day", "week", "month", "party", "item"] = "day",
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Sales summary grouped by dimension."""
         if group_by == "party":
             rows = self._cache.query(
@@ -140,13 +150,18 @@ class TallyQuery:
                           SUM(total_amount) as total_amount,
                           COUNT(*) as voucher_count
                 FROM trn_voucher
-                WHERE voucher_type = 'Sales' AND is_cancelled = false AND is_void = false
+                WHERE voucher_type = 'Sales'
+                AND is_cancelled = false AND is_void = false
                 AND date BETWEEN ? AND ?
                 GROUP BY party_ledger""",
                 [str(from_date), str(to_date)],
             )
             return [
-                {"party_name": r["party_name"] or "", "total_amount": Decimal(str(r["total_amount"])), "voucher_count": r["voucher_count"]}
+                {
+                    "party_name": r["party_name"] or "",
+                    "total_amount": Decimal(str(r["total_amount"])),
+                    "voucher_count": r["voucher_count"],
+                }
                 for r in rows
             ]
 
@@ -156,13 +171,18 @@ class TallyQuery:
                           SUM(total_amount) as total_amount,
                           COUNT(*) as voucher_count
                 FROM trn_voucher
-                WHERE voucher_type = 'Sales' AND is_cancelled = false AND is_void = false
+                WHERE voucher_type = 'Sales'
+                AND is_cancelled = false AND is_void = false
                 AND date BETWEEN ? AND ?
                 GROUP BY date ORDER BY date""",
                 [str(from_date), str(to_date)],
             )
             return [
-                {"period": str(r["period"]), "total_amount": Decimal(str(r["total_amount"])), "voucher_count": r["voucher_count"]}
+                {
+                    "period": str(r["period"]),
+                    "total_amount": Decimal(str(r["total_amount"])),
+                    "voucher_count": r["voucher_count"],
+                }
                 for r in rows
             ]
 
@@ -177,13 +197,17 @@ class TallyQuery:
             [str(from_date), str(to_date)],
         )
         return [
-            {"period": str(r["period"]), "total_amount": Decimal(str(r["total_amount"])), "voucher_count": r["voucher_count"]}
+            {
+                "period": str(r["period"]),
+                "total_amount": Decimal(str(r["total_amount"])),
+                "voucher_count": r["voucher_count"],
+            }
             for r in rows
         ]
 
     def get_purchases_summary(
         self, from_date: date, to_date: date, group_by: str = "day"
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Purchases summary grouped by dimension."""
         rows = self._cache.query(
             """SELECT date as period,
@@ -196,7 +220,11 @@ class TallyQuery:
             [str(from_date), str(to_date)],
         )
         return [
-            {"period": str(r["period"]), "total_amount": Decimal(str(r["total_amount"])), "voucher_count": r["voucher_count"]}
+            {
+                "period": str(r["period"]),
+                "total_amount": Decimal(str(r["total_amount"])),
+                "voucher_count": r["voucher_count"],
+            }
             for r in rows
         ]
 
@@ -225,15 +253,17 @@ class TallyQuery:
             params.append(party_name)
         where = " AND ".join(conditions)
         rows = self._cache.query(
-            f"""SELECT * FROM trn_voucher WHERE {where} ORDER BY date DESC LIMIT {limit}""",
+            f"""SELECT * FROM trn_voucher
+            WHERE {where} ORDER BY date DESC LIMIT {limit}""",
             params,
         )
         return [self._row_to_voucher(r) for r in rows]
 
-    def get_stock_summary(self) -> list[dict]:
+    def get_stock_summary(self) -> list[dict[str, Any]]:
         """All items: [{name, unit, closing_quantity, closing_value}]"""
         return self._cache.query(
-            "SELECT name, unit, closing_quantity, closing_value FROM mst_stock_item ORDER BY name"
+            "SELECT name, unit, closing_quantity, closing_value "
+            "FROM mst_stock_item ORDER BY name"
         )
 
     def get_low_stock_items(
@@ -242,12 +272,15 @@ class TallyQuery:
         """Items with closing_quantity <= threshold_quantity."""
         rows = self._cache.query(
             "SELECT * FROM mst_stock_item WHERE closing_quantity <= ?",
-            [float(threshold_quantity)],
+            [threshold_quantity],
         )
         return [
             TallyStockItem(
-                name=r["name"], guid=r["guid"], alter_id=r["alter_id"],
-                parent_group=r["parent_group"] or "", unit=r["unit"] or "",
+                name=r["name"],
+                guid=r["guid"],
+                alter_id=r["alter_id"],
+                parent_group=r["parent_group"] or "",
+                unit=r["unit"] or "",
                 closing_quantity=Decimal(str(r["closing_quantity"] or 0)),
                 closing_value=Decimal(str(r["closing_value"] or 0)),
             )
@@ -264,7 +297,8 @@ class TallyQuery:
         bucket_days = bucket_days or [30, 60, 90, 180]
 
         items = self._cache.query(
-            "SELECT name, unit, closing_quantity, closing_value FROM mst_stock_item WHERE closing_quantity > 0"
+            "SELECT name, unit, closing_quantity, closing_value "
+            "FROM mst_stock_item WHERE closing_quantity > 0"
         )
         movement_dates = self._cache.query(
             """SELECT ie.stock_item_name, MAX(v.date) as last_date
@@ -299,14 +333,16 @@ class TallyQuery:
                     unit=item["unit"] or "",
                     closing_quantity=Decimal(str(item["closing_quantity"])),
                     closing_value=Decimal(str(item["closing_value"])),
-                    last_movement_date=last_date if isinstance(last_date, date) else None,
+                    last_movement_date=last_date
+                    if isinstance(last_date, date)
+                    else None,
                     days_since_movement=days_since,
                     aging_bucket=bucket,
                 )
             )
         return result
 
-    def get_gst_summary(self, from_date: date, to_date: date) -> dict:
+    def get_gst_summary(self, from_date: date, to_date: date) -> dict[str, Any]:
         """GST summary for the period."""
         rows = self._cache.query(
             """SELECT le.ledger_name, SUM(le.amount) as total
@@ -339,7 +375,8 @@ class TallyQuery:
             elif "IGST" in name:
                 result["total_igst_collected"] = amount
         result["net_liability"] = (
-            result["total_cgst_collected"] + result["total_sgst_collected"]
+            result["total_cgst_collected"]
+            + result["total_sgst_collected"]
             + result["total_igst_collected"]
             - result["net_itc"]
         )
@@ -350,7 +387,7 @@ class TallyQuery:
         from_date: date,
         to_date: date,
         cost_center_name: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Income and expense breakdown by cost centre for the period."""
         centers = self._cache.query("SELECT name FROM mst_cost_center")
         if cost_center_name:
@@ -358,17 +395,19 @@ class TallyQuery:
 
         # NOTE: v0.1 approximation — cost centre allocations are not yet in
         # trn_ledger_entry. Using party_ledger as a proxy for cost centre.
-        result: list[dict] = []
+        result: list[dict[str, Any]] = []
         for cc in centers:
-            result.append({
-                "cost_center": cc["name"],
-                "total_income": Decimal("0"),
-                "total_expense": Decimal("0"),
-                "net": Decimal("0"),
-            })
+            result.append(
+                {
+                    "cost_center": cc["name"],
+                    "total_income": Decimal("0"),
+                    "total_expense": Decimal("0"),
+                    "net": Decimal("0"),
+                }
+            )
         return result
 
-    def search(self, query: str, limit: int = 20) -> dict:
+    def search(self, query: str, limit: int = 20) -> dict[str, Any]:
         """Case-insensitive search across ledger names, party names, narrations."""
         if not query.strip():
             return {"ledgers": [], "vouchers": [], "parties": []}
@@ -384,7 +423,9 @@ class TallyQuery:
             [pattern, pattern, limit],
         )
         parties = self._cache.query(
-            "SELECT DISTINCT party_ledger as name FROM trn_voucher WHERE party_ledger ILIKE ? AND is_cancelled = false LIMIT ?",
+            "SELECT DISTINCT party_ledger as name "
+            "FROM trn_voucher WHERE party_ledger ILIKE ? "
+            "AND is_cancelled = false LIMIT ?",
             [pattern, limit],
         )
         return {
@@ -403,7 +444,7 @@ class TallyQuery:
         return f"{prev}+"
 
     @staticmethod
-    def _row_to_voucher(r: dict) -> TallyVoucher:
+    def _row_to_voucher(r: dict[str, Any]) -> TallyVoucher:
         d = r.get("date")
         if isinstance(d, str):
             try:

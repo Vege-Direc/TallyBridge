@@ -69,7 +69,7 @@ async def test_export_collection_raises_data_error(
             "X-Tally-Simulate-Error": "true",
         },
     )
-    decoded = response.content.decode("utf-16", errors="replace")
+    decoded = response.content.decode("utf-8", errors="replace")
     assert "<LINEERROR>" in decoded
     from tallybridge.exceptions import TallyDataError
 
@@ -129,11 +129,16 @@ async def test_lineerror_detection_in_post_xml(
                 "X-Tally-Simulate-Error": "true",
             },
         )
-        decoded = response.content.decode("utf-16", errors="replace")
+        decoded = response.content.decode("utf-8", errors="replace")
         if "<LINEERROR>" in decoded:
             import re
+
             error_match = re.search(r"<LINEERROR>([^<]+)</LINEERROR>", decoded)
             error_text = error_match.group(1) if error_match else "Unknown error"
-            raise TallyDataError(f"Tally error: {error_text}", raw_response=decoded, error_text=error_text)
+            raise TallyDataError(
+                f"Tally error: {error_text}",
+                raw_response=decoded,
+                error_text=error_text,
+            )
     assert "Company not loaded" in str(exc_info.value)
     await connection.close()

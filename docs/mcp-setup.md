@@ -29,13 +29,7 @@ Add the TallyBridge MCP server:
 {
   "mcpServers": {
     "tallybridge": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/TallyBridge",
-        "run",
-        "tallybridge-mcp"
-      ],
+      "command": "tallybridge-mcp",
       "env": {
         "TALLYBRIDGE_TALLY_HOST": "localhost",
         "TALLYBRIDGE_TALLY_PORT": "9000",
@@ -46,18 +40,32 @@ Add the TallyBridge MCP server:
 }
 ```
 
-If you installed TallyBridge globally with pip, replace the `uv` command:
+Or if using `uv` with a local clone:
 
 ```json
 {
   "mcpServers": {
     "tallybridge": {
-      "command": "tallybridge-mcp",
-      "env": {
-        "TALLYBRIDGE_TALLY_HOST": "localhost",
-        "TALLYBRIDGE_TALLY_PORT": "9000",
-        "TALLYBRIDGE_TALLY_COMPANY": ""
-      }
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/TallyBridge",
+        "run",
+        "tallybridge-mcp"
+      ]
+    }
+  }
+}
+```
+
+You can also use the CLI subcommand instead of the dedicated entry point:
+
+```json
+{
+  "mcpServers": {
+    "tallybridge": {
+      "command": "tallybridge",
+      "args": ["mcp"]
     }
   }
 }
