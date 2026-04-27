@@ -111,3 +111,39 @@ async def test_detect_tally_version_caches_result() -> None:
     result = await detect_tally_version(conn)
     assert result == TallyProduct.PRIME_7
     conn.post_xml.assert_not_called()
+
+
+def test_capabilities_erp9() -> None:
+    caps = TallyProduct.ERP9.capabilities()
+    assert caps["is_prime"] is False
+    assert caps["json_api"] is False
+    assert caps["base64_encoding"] is False
+    assert caps["tally_drive"] is False
+    assert caps["connected_gst"] is False
+
+
+def test_capabilities_prime7() -> None:
+    caps = TallyProduct.PRIME_7.capabilities()
+    assert caps["is_prime"] is True
+    assert caps["json_api"] is True
+    assert caps["base64_encoding"] is True
+    assert caps["tally_drive"] is True
+    assert caps["connected_gst"] is True
+    assert caps["connected_banking"] is True
+
+
+def test_capabilities_prime4() -> None:
+    caps = TallyProduct.PRIME_4.capabilities()
+    assert caps["connected_gst"] is True
+    assert caps["json_api"] is False
+    assert caps["tally_drive"] is False
+
+
+def test_json_api_only_prime7() -> None:
+    assert TallyProduct.PRIME_6.supports_json_api is False
+    assert TallyProduct.PRIME_7.supports_json_api is True
+
+
+def test_base64_encoding_only_prime7() -> None:
+    assert TallyProduct.PRIME_6.supports_base64_encoding is False
+    assert TallyProduct.PRIME_7.supports_base64_encoding is True

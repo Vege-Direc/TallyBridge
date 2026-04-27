@@ -533,16 +533,12 @@ def build_voucher_xml_all_ledger(
         lines.append("<ALLLEDGERENTRIES.LIST>")
         lines.append("<LEDGERNAME>CGST</LEDGERNAME>")
         lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
-        lines.append(
-            f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
-        )
+        lines.append(f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>")
         lines.append("</ALLLEDGERENTRIES.LIST>")
         lines.append("<ALLLEDGERENTRIES.LIST>")
         lines.append("<LEDGERNAME>SGST</LEDGERNAME>")
         lines.append("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>")
-        lines.append(
-            f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>"
-        )
+        lines.append(f"<AMOUNT>-{(Decimal(amount) * Decimal('0.09')):.2f}</AMOUNT>")
         lines.append("</ALLLEDGERENTRIES.LIST>")
         lines.append("<ALLINVENTORYENTRIES.LIST>")
         lines.append("<STOCKITEMNAME>Widget A</STOCKITEMNAME>")
@@ -570,9 +566,7 @@ def setup_mock_routes(httpserver) -> None:
                 "Company not loaded</LINEERROR>"
                 "</DATA></BODY></ENVELOPE>"
             )
-            return Response(
-                body.encode("utf-8"), content_type="text/xml;charset=utf-8"
-            )
+            return Response(body.encode("utf-8"), content_type="text/xml;charset=utf-8")
 
         content_type = request.headers.get("Content-Type", "")
         if "utf-16" in content_type.lower():
@@ -603,8 +597,6 @@ def setup_mock_routes(httpserver) -> None:
         else:
             resp_xml = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
 
-        return Response(
-            resp_xml.encode(response_encoding), content_type=response_ct
-        )
+        return Response(resp_xml.encode(response_encoding), content_type=response_ct)
 
     httpserver.expect_request("/").respond_with_handler(_handler)

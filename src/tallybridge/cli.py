@@ -302,9 +302,7 @@ def init() -> None:
         "[bold]Welcome to TallyBridge![/bold] Let's connect to your TallyPrime."
     )
 
-    running = typer.confirm(
-        "Is TallyPrime running on this computer?", default=True
-    )
+    running = typer.confirm("Is TallyPrime running on this computer?", default=True)
     if not running:
         console.print("Please start TallyPrime and run this wizard again.")
         raise typer.Exit(0)

@@ -1,10 +1,17 @@
 """HTTP connection to TallyPrime — see SPECS.md §4."""
 
+import base64
 import html
 import re
 
 import httpx
 from loguru import logger
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
@@ -31,7 +38,12 @@ class TallyConnection:
                 headers={"Content-Type": "text/xml; charset=utf-8"},
             )
             return response.status_code == 200
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.HTTPError):
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.ReadTimeout,
+            httpx.HTTPError,
+        ):
             return False
 
     async def get_company_list(self) -> list[str]:
@@ -93,6 +105,17 @@ class TallyConnection:
             return 0
         return max(int(a) for a in alter_ids)
 
+    @retry(
+        retry=retry_if_exception_type((httpx.ReadTimeout, TallyDataError)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+        before_sleep=lambda rs: logger.warning(
+            "Retrying post_xml (attempt {}): {}",
+            rs.attempt_number,
+            rs.outcome.exception() if rs.outcome else "unknown",
+        ),
+    )
     async def post_xml(self, xml_body: str) -> str:
         """POST XML to Tally, return decoded response string.
 
@@ -128,14 +151,20 @@ class TallyConnection:
                 content=encoded_body,
                 headers={"Content-Type": content_type},
             )
-        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
             logger.warning("Tally connection failed: {}", exc)
+            timeout_hint = ""
+            if isinstance(exc, httpx.ReadTimeout):
+                timeout_hint = (
+                    f" Read timeout is {self._config.tally_port}. "
+                    f"Try reducing VOUCHER_BATCH_SIZE if syncing large datasets."
+                )
             raise TallyConnectionError(
                 f"Could not connect to Tally on "
                 f"{self._config.tally_host}:{self._config.tally_port}. "
                 f"Is TallyPrime open? Enable: F1 > Settings > Connectivity > "
                 f"TallyPrime acts as = Server, "
-                f"Port = {self._config.tally_port}"
+                f"Port = {self._config.tally_port}.{timeout_hint}"
             ) from exc
 
         decoded = response.content.decode(response_encoding, errors="replace")
@@ -152,6 +181,12 @@ class TallyConnection:
                 error_text=error_text,
             )
 
+        # NOTE on STATUS semantics: Official TallyHelp docs say
+        # STATUS=0 means failure, but observed TallyPrime behavior
+        # returns STATUS=0 for empty collections (no data).
+        # STATUS=-1 indicates an actual error. STATUS=1 indicates success.
+        # When strict_status is True (config), STATUS=0 is treated as error.
+        # See: https://help.tallysolutions.com/integrate-with-tallyprime/
         status_match = re.search(r"<STATUS>(-?\d+)</STATUS>", decoded)
         if status_match:
             status_val = int(status_match.group(1))
@@ -161,6 +196,14 @@ class TallyConnection:
                     raw_response=decoded,
                     error_text=f"STATUS={status_val}",
                 )
+            if status_val == 0:
+                logger.debug("Tally returned STATUS 0 — empty collection or no data")
+                if self._config.strict_status:
+                    raise TallyDataError(
+                        "Tally returned STATUS 0 (treated as error in strict mode)",
+                        raw_response=decoded,
+                        error_text=f"STATUS={status_val}",
+                    )
 
         if "<LINEERROR>" in decoded:
             error_match = re.search(r"<LINEERROR>([^<]+)</LINEERROR>", decoded)
@@ -172,6 +215,72 @@ class TallyConnection:
             )
 
         return decoded
+
+    async def export_object(
+        self,
+        tally_type: str,
+        name: str | None = None,
+        guid: str | None = None,
+        company: str | None = None,
+    ) -> str:
+        """Export a single Tally object by Name or GUID using TYPE=Object.
+
+        Args:
+            tally_type: Tally object type: Ledger, Voucher, StockItem, etc.
+            name: Object name to look up (mutually exclusive with guid).
+            guid: Object GUID to look up (mutually exclusive with name).
+            company: Company name, or None for the active company.
+
+        Returns:
+            Raw XML string of the matching Tally object.
+
+        Raises:
+            TallyConnectionError: Tally not running.
+            TallyDataError: Tally returned an error.
+            ValueError: Neither name nor guid provided.
+        """
+        if not name and not guid:
+            raise ValueError("export_object requires either 'name' or 'guid'")
+        xml = self._build_object_xml(tally_type, name, guid, company)
+        return await self.post_xml(xml)
+
+    async def fetch_report(
+        self,
+        report_name: str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        company: str | None = None,
+    ) -> str:
+        """Fetch a computed Tally report using TYPE=Data.
+
+        Supported report names: "Balance Sheet", "Profit & Loss",
+        "Day Book", "Trial Balance", and other Tally built-in reports.
+
+        Args:
+            report_name: The Tally report to fetch.
+            from_date: Start date in YYYYMMDD format (optional).
+            to_date: End date in YYYYMMDD format (optional).
+            company: Company name, or None for the active company.
+
+        Returns:
+            Raw XML string of the report data.
+
+        Raises:
+            TallyConnectionError: Tally not running.
+            TallyDataError: Tally returned an error.
+        """
+        xml = self._build_report_xml(report_name, from_date, to_date, company)
+        return await self.post_xml(xml)
+
+    @staticmethod
+    def encode_name_base64(name: str) -> str:
+        """Encode a multilingual entity name to base64 for TallyPrime 7.0+.
+
+        TallyPrime 7.0+ supports the `id-encoded` header for non-ASCII
+        entity names. Base64-encoding the name prevents XML parsing issues
+        with Unicode characters in TDL requests.
+        """
+        return base64.b64encode(name.encode("utf-8")).decode("ascii")
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -235,4 +344,71 @@ class TallyConnection:
             f"{filter_section}"
             "</COLLECTION>"
             "</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
+        )
+
+    @staticmethod
+    def _build_object_xml(
+        tally_type: str,
+        name: str | None = None,
+        guid: str | None = None,
+        company: str | None = None,
+    ) -> str:
+        """Build XML for a single-object export (TYPE=Object)."""
+        safe_type = html.escape(tally_type, quote=True)
+        static_vars = "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+        if company:
+            static_vars += (
+                f"<SVCURRENTCOMPANY>"
+                f"{html.escape(company, quote=True)}"
+                f"</SVCURRENTCOMPANY>"
+            )
+
+        object_id = ""
+        if name:
+            object_id = html.escape(name, quote=True)
+        elif guid:
+            object_id = html.escape(guid, quote=True)
+
+        return (
+            "<ENVELOPE>"
+            "<HEADER><VERSION>1</VERSION>"
+            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+            f"<TYPE>Object</TYPE><ID>{safe_type}</ID></HEADER>"
+            "<BODY><DESC><STATICVARIABLES>"
+            f"{static_vars}"
+            f"<SVOBJECTNAME>{object_id}</SVOBJECTNAME>"
+            "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
+        )
+
+    @staticmethod
+    def _build_report_xml(
+        report_name: str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        company: str | None = None,
+    ) -> str:
+        """Build XML for a computed report export (TYPE=Data)."""
+        safe_report = html.escape(report_name, quote=True)
+        static_vars = "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+        if company:
+            static_vars += (
+                f"<SVCURRENTCOMPANY>"
+                f"{html.escape(company, quote=True)}"
+                f"</SVCURRENTCOMPANY>"
+            )
+        if from_date:
+            static_vars += (
+                f"<SVFROMDATE>{html.escape(from_date, quote=True)}</SVFROMDATE>"
+            )
+        if to_date:
+            static_vars += f"<SVTODATE>{html.escape(to_date, quote=True)}</SVTODATE>"
+
+        return (
+            "<ENVELOPE>"
+            "<HEADER><VERSION>1</VERSION>"
+            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+            f"<TYPE>Data</TYPE><ID>{safe_report}</ID></HEADER>"
+            "<BODY><DESC><STATICVARIABLES>"
+            f"{static_vars}"
+            "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
         )

@@ -1,5 +1,6 @@
 """DuckDB cache layer — see SPECS.md §6."""
 
+import hashlib
 import os
 from datetime import date
 from decimal import Decimal
@@ -197,7 +198,35 @@ ALTER TABLE mst_stock_group ADD COLUMN IF NOT EXISTS company TEXT;
 ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS company TEXT;
 ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS company TEXT;""",
     ),
+    (
+        4,
+        "add content_hash column to master tables for drift detection",
+        """ALTER TABLE mst_ledger ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_group ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_stock_item ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_voucher_type ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_unit ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_stock_group ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
+    ),
+    (
+        5,
+        "add sync_errors table for tracking failed records",
+        """CREATE TABLE IF NOT EXISTS sync_errors (
+    id          BIGINT DEFAULT nextval('seq_entry_id') PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    record_guid TEXT,
+    error_message TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT current_timestamp
+);""",
+    ),
 ]
+
+
+def _compute_content_hash(*values: Any) -> str:
+    """Compute SHA-256 hash from field values for drift detection."""
+    payload = "|".join(str(v) for v in values)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class TallyCache:
@@ -228,16 +257,21 @@ class TallyCache:
 
     def upsert_ledgers(self, ledgers: list[TallyLedger]) -> int:
         """INSERT OR REPLACE ledgers by guid. Returns affected row count."""
-        count = 0
-        for ledger in ledgers:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_ledger
-                (guid, alter_id, name, parent_group, opening_balance, closing_balance,
-                 is_revenue, affects_gross_profit, gstin, party_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    ledger.guid,
-                    ledger.alter_id,
+        if not ledgers:
+            return 0
+        rows = [
+            (
+                ledger.guid,
+                ledger.alter_id,
+                ledger.name,
+                ledger.parent_group,
+                ledger.opening_balance,
+                ledger.closing_balance,
+                ledger.is_revenue,
+                ledger.affects_gross_profit,
+                ledger.gstin,
+                ledger.party_name,
+                _compute_content_hash(
                     ledger.name,
                     ledger.parent_group,
                     ledger.opening_balance,
@@ -246,125 +280,201 @@ class TallyCache:
                     ledger.affects_gross_profit,
                     ledger.gstin,
                     ledger.party_name,
-                ],
+                ),
             )
-            count += 1
-        return count
+            for ledger in ledgers
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_ledger
+            (guid, alter_id, name, parent_group, opening_balance, closing_balance,
+             is_revenue, affects_gross_profit, gstin, party_name, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(ledgers)
 
     def upsert_groups(self, groups: list[TallyGroup]) -> int:
-        count = 0
-        for group in groups:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_group
-                (guid, alter_id, name, parent, primary_group, is_revenue,
-                 affects_gross_profit, net_debit_credit)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    group.guid,
-                    group.alter_id,
+        if not groups:
+            return 0
+        rows = [
+            (
+                group.guid,
+                group.alter_id,
+                group.name,
+                group.parent,
+                group.primary_group,
+                group.is_revenue,
+                group.affects_gross_profit,
+                group.net_debit_credit,
+                _compute_content_hash(
                     group.name,
                     group.parent,
                     group.primary_group,
                     group.is_revenue,
                     group.affects_gross_profit,
                     group.net_debit_credit,
-                ],
+                ),
             )
-            count += 1
-        return count
+            for group in groups
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_group
+            (guid, alter_id, name, parent, primary_group, is_revenue,
+             affects_gross_profit, net_debit_credit, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(groups)
 
     def upsert_stock_items(self, items: list[TallyStockItem]) -> int:
-        count = 0
-        for item in items:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_stock_item
-                (guid, alter_id, name, parent_group, unit, gst_rate, hsn_code,
-                 opening_quantity, opening_rate, closing_quantity, closing_value)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    item.guid,
-                    item.alter_id,
+        if not items:
+            return 0
+        rows = [
+            (
+                item.guid,
+                item.alter_id,
+                item.name,
+                item.parent_group,
+                item.unit,
+                item.gst_rate if item.gst_rate is not None else None,
+                item.hsn_code,
+                item.opening_quantity,
+                item.opening_rate,
+                item.closing_quantity,
+                item.closing_value,
+                _compute_content_hash(
                     item.name,
                     item.parent_group,
                     item.unit,
-                    item.gst_rate if item.gst_rate is not None else None,
+                    item.gst_rate,
                     item.hsn_code,
                     item.opening_quantity,
                     item.opening_rate,
                     item.closing_quantity,
                     item.closing_value,
-                ],
+                ),
             )
-            count += 1
-        return count
+            for item in items
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_stock_item
+            (guid, alter_id, name, parent_group, unit, gst_rate, hsn_code,
+             opening_quantity, opening_rate, closing_quantity, closing_value,
+             content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(items)
 
     def upsert_voucher_types(self, vtypes: list[TallyVoucherType]) -> int:
-        count = 0
-        for vt in vtypes:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_voucher_type
-                (guid, alter_id, name, parent) VALUES (?, ?, ?, ?)""",
-                [vt.guid, vt.alter_id, vt.name, vt.parent],
+        if not vtypes:
+            return 0
+        rows = [
+            (
+                vt.guid,
+                vt.alter_id,
+                vt.name,
+                vt.parent,
+                _compute_content_hash(vt.name, vt.parent),
             )
-            count += 1
-        return count
+            for vt in vtypes
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_voucher_type
+            (guid, alter_id, name, parent, content_hash) VALUES (?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(vtypes)
 
     def upsert_units(self, units: list[TallyUnit]) -> int:
-        count = 0
-        for unit in units:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_unit
-                (guid, alter_id, name, unit_type, base_units, decimal_places, symbol)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    unit.guid,
-                    unit.alter_id,
+        if not units:
+            return 0
+        rows = [
+            (
+                unit.guid,
+                unit.alter_id,
+                unit.name,
+                unit.unit_type,
+                unit.base_units,
+                unit.decimal_places,
+                unit.symbol,
+                _compute_content_hash(
                     unit.name,
                     unit.unit_type,
                     unit.base_units,
                     unit.decimal_places,
                     unit.symbol,
-                ],
+                ),
             )
-            count += 1
-        return count
+            for unit in units
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_unit
+            (guid, alter_id, name, unit_type, base_units, decimal_places,
+             symbol, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(units)
 
     def upsert_stock_groups(self, groups: list[TallyStockGroup]) -> int:
-        count = 0
-        for sg in groups:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_stock_group
-                (guid, alter_id, name, parent, should_quantities_add)
-                VALUES (?, ?, ?, ?, ?)""",
-                [sg.guid, sg.alter_id, sg.name, sg.parent, sg.should_quantities_add],
+        if not groups:
+            return 0
+        rows = [
+            (
+                sg.guid,
+                sg.alter_id,
+                sg.name,
+                sg.parent,
+                sg.should_quantities_add,
+                _compute_content_hash(sg.name, sg.parent, sg.should_quantities_add),
             )
-            count += 1
-        return count
+            for sg in groups
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_stock_group
+            (guid, alter_id, name, parent, should_quantities_add, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(groups)
 
     def upsert_cost_centers(self, centers: list[TallyCostCenter]) -> int:
-        count = 0
-        for cc in centers:
-            self.conn.execute(
-                """INSERT OR REPLACE INTO mst_cost_center
-                (guid, alter_id, name, parent, email, cost_centre_type)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                [
-                    cc.guid,
-                    cc.alter_id,
-                    cc.name,
-                    cc.parent,
-                    cc.email,
-                    cc.cost_centre_type,
-                ],
+        if not centers:
+            return 0
+        rows = [
+            (
+                cc.guid,
+                cc.alter_id,
+                cc.name,
+                cc.parent,
+                cc.email,
+                cc.cost_centre_type,
+                _compute_content_hash(
+                    cc.name, cc.parent, cc.email, cc.cost_centre_type
+                ),
             )
-            count += 1
-        return count
+            for cc in centers
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_cost_center
+            (guid, alter_id, name, parent, email, cost_centre_type, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(centers)
 
     def upsert_vouchers(
         self, vouchers: list[TallyVoucher], company: str | None = None
-    ) -> int:
-        """Upsert vouchers and replace their child entries atomically."""
+    ) -> tuple[int, int]:
+        """Upsert vouchers and replace their child entries atomically.
+
+        Returns (count_committed, max_alter_id_committed) so callers can
+        safely advance sync_state only to the highest successfully
+        committed alter_id.
+        """
         count = 0
+        max_committed_alter_id = 0
         for voucher in vouchers:
             try:
                 self.conn.begin()
@@ -421,7 +531,7 @@ class TallyCache:
                         (voucher_guid, ledger_name, amount) VALUES (?, ?, ?)""",
                         [voucher.guid, entry.ledger_name, entry.amount],
                     )
-                for entry in voucher.inventory_entries:  # type: ignore[assignment]
+                for entry in voucher.inventory_entries:
                     self.conn.execute(
                         """INSERT INTO trn_inventory_entry
                         (voucher_guid, stock_item_name, quantity,
@@ -429,22 +539,22 @@ class TallyCache:
                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         [
                             voucher.guid,
-                            entry.stock_item_name,  # type: ignore[attr-defined]
-                            entry.quantity,  # type: ignore[attr-defined]
-                            entry.rate,  # type: ignore[attr-defined]
+                            entry.stock_item_name,
+                            entry.quantity,
+                            entry.rate,
                             entry.amount,
-                            entry.godown,  # type: ignore[attr-defined]
-                            entry.batch,  # type: ignore[attr-defined]
+                            entry.godown,
+                            entry.batch,
                         ],
                     )
-                for cc in voucher.cost_centre_allocations:  # type: ignore[attr-defined]
+                for cc in voucher.cost_centre_allocations:
                     self.conn.execute(
                         """INSERT INTO trn_cost_centre
                         (voucher_guid, ledger_name, cost_centre, amount)
                         VALUES (?, ?, ?, ?)""",
                         [voucher.guid, cc.ledger_name, cc.cost_centre, cc.amount],
                     )
-                for bill in voucher.bill_allocations:  # type: ignore[attr-defined]
+                for bill in voucher.bill_allocations:
                     self.conn.execute(
                         """INSERT INTO trn_bill
                         (voucher_guid, ledger_name, bill_name, amount,
@@ -461,10 +571,13 @@ class TallyCache:
                     )
                 self.conn.commit()
                 count += 1
+                if voucher.alter_id > max_committed_alter_id:
+                    max_committed_alter_id = voucher.alter_id
             except Exception as exc:
                 self.conn.rollback()
                 logger.warning("Failed to upsert voucher {}: {}", voucher.guid, exc)
-        return count
+                self.log_sync_error("voucher", voucher.guid, str(exc))
+        return count, max_committed_alter_id
 
     def get_last_alter_id(self, entity_type: str) -> int:
         """Return last synced AlterID for entity_type, or 0 if not yet synced."""
@@ -553,7 +666,13 @@ class TallyCache:
             [voucher_type],
         )
         for r in rows:
-            bill_date = r["date"] if isinstance(r["date"], date) else date.today()
+            bill_date = r["date"] if isinstance(r["date"], date) else None
+            if bill_date is None:
+                logger.warning(
+                    "Skipping outstanding bill with missing date: guid={}",
+                    r.get("guid"),
+                )
+                continue
             bills.append(
                 OutstandingBill(
                     party_name=r["party_ledger"] or "",
@@ -596,7 +715,9 @@ class TallyCache:
         return lines
 
     def health_check(self) -> dict[str, Any]:
-        """Return {record_counts, last_sync_times, db_size_mb, schema_version}."""
+        """Return health info: record_counts, last_sync_times, db_size_mb,
+        schema_version, orphan_count.
+        """
         tables = [
             "mst_ledger",
             "mst_group",
@@ -609,13 +730,24 @@ class TallyCache:
             "trn_cost_centre",
             "trn_bill",
         ]
+        union_parts = " UNION ALL ".join(
+            f"SELECT '{t}' as tbl, COUNT(*) as cnt FROM {t}" for t in tables
+        )
         record_counts: dict[str, int] = {}
-        for t in tables:
-            try:
-                result = self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()
-                record_counts[t] = result[0] if result else 0
-            except Exception:
-                record_counts[t] = 0
+        try:
+            rows = self.conn.execute(union_parts).fetchall()
+            for row in rows:
+                record_counts[row[0]] = row[1]
+        except Exception as exc:
+            logger.debug("Health check COUNT query failed: {}", exc)
+            for t in tables:
+                try:
+                    result = self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()
+                    record_counts[t] = result[0] if result else 0
+                except Exception:
+                    record_counts[t] = 0
+
+        orphan_count = self.reconcile_orphans()
 
         sync_status = self.get_sync_status()
         db_size_mb = 0.0
@@ -627,55 +759,180 @@ class TallyCache:
             "last_sync_times": {k: v["last_sync_at"] for k, v in sync_status.items()},
             "db_size_mb": round(db_size_mb, 2),
             "schema_version": 0,
+            "orphan_count": orphan_count,
         }
+
+    def reconcile_orphans(self) -> int:
+        """Detect ledger entries referencing ledgers not in mst_ledger.
+
+        Returns the count of orphaned ledger entries and logs a warning.
+        Called from health_check().
+        """
+        try:
+            result = self.conn.execute(
+                """SELECT COUNT(*) FROM trn_ledger_entry le
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM mst_ledger m WHERE m.name = le.ledger_name
+                )"""
+            ).fetchone()
+            orphan_count = result[0] if result else 0
+            if orphan_count > 0:
+                logger.warning(
+                    "Found {} orphaned ledger entries referencing non-existent ledgers",
+                    orphan_count,
+                )
+            return orphan_count
+        except Exception as exc:
+            logger.debug("Orphan reconciliation failed: {}", exc)
+            return 0
+
+    def log_sync_error(
+        self, entity_type: str, record_guid: str | None, error_message: str
+    ) -> None:
+        """Log a failed record to the sync_errors table."""
+        try:
+            self.conn.execute(
+                """INSERT INTO sync_errors (entity_type, record_guid, error_message)
+                VALUES (?, ?, ?)""",
+                [entity_type, record_guid, error_message],
+            )
+        except Exception as exc:
+            logger.debug("Failed to log sync error: {}", exc)
+
+    def get_sync_errors(
+        self, entity_type: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Return recent sync errors, optionally filtered by entity type."""
+        if entity_type:
+            return self.query(
+                """SELECT id, entity_type, record_guid, error_message, created_at
+                FROM sync_errors WHERE entity_type = ?
+                ORDER BY created_at DESC LIMIT ?""",
+                [entity_type, limit],
+            )
+        return self.query(
+            """SELECT id, entity_type, record_guid, error_message, created_at
+            FROM sync_errors ORDER BY created_at DESC LIMIT ?""",
+            [limit],
+        )
+
+    def detect_content_drift(self, entity_type: str) -> list[dict[str, Any]]:
+        """Detect records whose content_hash differs from a previous snapshot.
+
+        Takes a snapshot of current content_hash values, which can later be
+        compared after a re-sync using compare_content_drift().
+
+        Returns a list of dicts with guid, name, and content_hash for each record.
+        """
+        hash_configs: dict[str, dict[str, Any]] = {
+            "ledger": {"table": "mst_ledger", "name_col": "name"},
+            "group": {"table": "mst_group", "name_col": "name"},
+            "stock_item": {"table": "mst_stock_item", "name_col": "name"},
+            "voucher_type": {"table": "mst_voucher_type", "name_col": "name"},
+            "unit": {"table": "mst_unit", "name_col": "name"},
+            "stock_group": {"table": "mst_stock_group", "name_col": "name"},
+            "cost_center": {"table": "mst_cost_center", "name_col": "name"},
+        }
+        cfg = hash_configs.get(entity_type)
+        if cfg is None:
+            return []
+
+        table = cfg["table"]
+        name_col = cfg["name_col"]
+        try:
+            rows = self.conn.execute(
+                f"SELECT guid, {name_col}, content_hash FROM {table}"
+            ).fetchall()
+        except Exception as exc:
+            logger.debug("Content drift query failed for {}: {}", entity_type, exc)
+            return []
+
+        return [
+            {
+                "entity_type": entity_type,
+                "guid": row[0],
+                "name": row[1],
+                "content_hash": row[2],
+            }
+            for row in rows
+            if row[2] is not None
+        ]
+
+    def compare_content_drift(
+        self, entity_type: str, before: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Compare current content hashes against a previous snapshot.
+
+        Args:
+            entity_type: The entity type to check.
+            before: Snapshot from detect_content_drift() taken before re-sync.
+
+        Returns list of dicts for records where the hash changed or was added.
+        """
+        after = self.detect_content_drift(entity_type)
+        before_map = {r["guid"]: r["content_hash"] for r in before}
+
+        drift: list[dict[str, Any]] = []
+        for record in after:
+            old_hash = before_map.get(record["guid"])
+            if old_hash is None:
+                continue
+            if record["content_hash"] != old_hash:
+                drift.append(
+                    {
+                        "entity_type": entity_type,
+                        "guid": record["guid"],
+                        "name": record["name"],
+                        "old_hash": old_hash,
+                        "new_hash": record["content_hash"],
+                    }
+                )
+        if drift:
+            logger.warning(
+                "Content drift detected for {}: {} record(s) changed",
+                entity_type,
+                len(drift),
+            )
+        return drift
 
     def query_readonly(
         self, sql: str, params: list[Any] | None = None
     ) -> list[dict[str, Any]]:
         """Execute SQL query with read-only enforcement.
 
-        DuckDB does not support concurrent read-only and read-write connections
-        to the same file within a single process, nor does ATTACH allow
-        attaching the same file twice. Instead, we enforce read-only by:
-
-        1. Beginning a read-only transaction (BEGIN READ ONLY)
-        2. Executing the query
-        3. Aborting the transaction (ROLLBACK)
-
-        This ensures no writes can occur during query execution.
-        If BEGIN READ ONLY fails (e.g. inside an existing transaction),
-        falls back to executing directly.
+        Temporarily closes the read-write connection, opens a read-only
+        DuckDB connection, executes the query, then reopens read-write.
+        This physically prevents all write operations during query execution.
+        Never falls back to the read-write connection for queries.
         """
+        self._suspend_write_conn()
         try:
-            self.conn.execute("BEGIN READ ONLY")
-        except Exception:
+            read_conn = duckdb.connect(self._db_path, read_only=True)
             try:
-                self.conn.execute("COMMIT")
-            except Exception:
-                pass
-            try:
-                self.conn.execute("BEGIN READ ONLY")
-            except Exception:
-                result = self.conn.execute(sql, params or [])
+                result = read_conn.execute(sql, params or [])
                 columns = [desc[0] for desc in result.description]
-                return [
-                    dict(zip(columns, row, strict=False))
-                    for row in result.fetchall()
+                rows = [
+                    dict(zip(columns, row, strict=False)) for row in result.fetchall()
                 ]
-
-        try:
-            result = self.conn.execute(sql, params or [])
-            columns = [desc[0] for desc in result.description]
-            rows = [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
-            return rows
+                return rows
+            finally:
+                read_conn.close()
         except Exception as exc:
             logger.warning("Read-only query failed: {}", exc)
             raise TallyBridgeCacheError(str(exc)) from exc
         finally:
-            try:
-                self.conn.execute("ROLLBACK")
-            except Exception:
-                pass
+            self._resume_write_conn()
+
+    def _suspend_write_conn(self) -> None:
+        """Close the write connection temporarily for read-only access."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def _resume_write_conn(self) -> None:
+        """Reopen the write connection after read-only access."""
+        if self._conn is None:
+            self._conn = duckdb.connect(self._db_path)
 
     def close(self) -> None:
         if self._conn is not None:

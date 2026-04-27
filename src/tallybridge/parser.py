@@ -306,12 +306,19 @@ class TallyXMLParser:
                     ),
                     Decimal("0"),
                 )
+                parsed_date = self.parse_date(self.get_text(elem, "DATE"))
+                if parsed_date is None:
+                    logger.warning(
+                        "Skipping voucher with unparseable date: guid={}",
+                        self.get_text(elem, "GUID"),
+                    )
+                    continue
                 voucher = TallyVoucher(
                     guid=self.get_text(elem, "GUID"),
                     alter_id=int(self.get_text(elem, "ALTERID", "0")),
                     voucher_number=self.get_text(elem, "VOUCHERNUMBER"),
                     voucher_type=self.get_text(elem, "VOUCHERTYPENAME"),
-                    date=self.parse_date(self.get_text(elem, "DATE")) or date.today(),
+                    date=parsed_date,
                     effective_date=self.parse_date(
                         self.get_text(elem, "EFFECTIVEDATE")
                     ),
@@ -349,10 +356,16 @@ class TallyXMLParser:
         bills: list[OutstandingBill] = []
         for elem in root.iter("BILL"):
             try:
+                parsed_bill_date = self.parse_date(self.get_text(elem, "DATE"))
+                if parsed_bill_date is None:
+                    logger.warning(
+                        "Skipping bill with unparseable date: party={}",
+                        self.get_text(elem, "PARTYNAME"),
+                    )
+                    continue
                 bill = OutstandingBill(
                     party_name=self.get_text(elem, "PARTYNAME"),
-                    bill_date=self.parse_date(self.get_text(elem, "DATE"))
-                    or date.today(),
+                    bill_date=parsed_bill_date,
                     bill_number=self.get_text(elem, "BILLNUMBER"),
                     bill_amount=self.parse_amount(self.get_text(elem, "BILLAMOUNT")),
                     outstanding_amount=self.parse_amount(
@@ -460,9 +473,7 @@ class TallyXMLParser:
             for cat_elem in entry.findall("CATEGORYALLOCATIONS.LIST"):
                 for cc_elem in cat_elem.findall("COSTCENTRE.LIST"):
                     cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
-                    amount = self.parse_amount(
-                        self.get_text(cc_elem, "AMOUNT")
-                    )
+                    amount = self.parse_amount(self.get_text(cc_elem, "AMOUNT"))
                     if amount == Decimal("0"):
                         amount = self._parse_complex_amount(cc_elem, "AMOUNT")
                     allocations.append(
@@ -489,9 +500,7 @@ class TallyXMLParser:
             for cat_elem in entry.findall("CATEGORYALLOCATIONS.LIST"):
                 for cc_elem in cat_elem.findall("COSTCENTRE.LIST"):
                     cc_name = self.get_text(cc_elem, "COSTCENTRENAME")
-                    amount = self.parse_amount(
-                        self.get_text(cc_elem, "AMOUNT")
-                    )
+                    amount = self.parse_amount(self.get_text(cc_elem, "AMOUNT"))
                     if amount == Decimal("0"):
                         amount = self._parse_complex_amount(cc_elem, "AMOUNT")
                     allocations.append(
@@ -520,9 +529,7 @@ class TallyXMLParser:
             for bill_elem in entry.findall("BILLALLOCATIONS.LIST"):
                 bill_type = self.get_text(bill_elem, "BILLTYPE") or None
                 bill_name = self.get_text(bill_elem, "NAME")
-                amount = self.parse_amount(
-                    self.get_text(bill_elem, "AMOUNT")
-                )
+                amount = self.parse_amount(self.get_text(bill_elem, "AMOUNT"))
                 if amount == Decimal("0"):
                     amount = self._parse_complex_amount(bill_elem, "AMOUNT")
                 bill_credit_period = self._parse_bill_credit_period(bill_elem)
@@ -540,9 +547,7 @@ class TallyXMLParser:
             for bill_elem in entry.findall("BILLALLOCATIONS.LIST"):
                 bill_type = self.get_text(bill_elem, "BILLTYPE") or None
                 bill_name = self.get_text(bill_elem, "NAME")
-                amount = self.parse_amount(
-                    self.get_text(bill_elem, "AMOUNT")
-                )
+                amount = self.parse_amount(self.get_text(bill_elem, "AMOUNT"))
                 if amount == Decimal("0"):
                     amount = self._parse_complex_amount(bill_elem, "AMOUNT")
                 bill_credit_period = self._parse_bill_credit_period(bill_elem)
@@ -557,9 +562,7 @@ class TallyXMLParser:
                 )
         return allocations
 
-    def _parse_complex_amount(
-        self, parent: ET.Element, tag: str
-    ) -> Decimal:
+    def _parse_complex_amount(self, parent: ET.Element, tag: str) -> Decimal:
         amount_elem = parent.find(tag)
         if amount_elem is None:
             return Decimal("0")
@@ -568,9 +571,7 @@ class TallyXMLParser:
             return self.parse_amount(inner.text.strip())
         is_debit_elem = amount_elem.find("ISDEBIT")
         raw = (
-            inner.text.strip()
-            if inner is not None and inner.text
-            else amount_elem.text
+            inner.text.strip() if inner is not None and inner.text else amount_elem.text
         )
         if raw and is_debit_elem is not None:
             val = self.parse_amount(raw)
@@ -601,9 +602,7 @@ class TallyXMLParser:
             if date_val is not None:
                 bill_date_elem = bill_elem.find("BILLDATE")
                 if bill_date_elem is not None and bill_date_elem.text:
-                    bill_date = TallyXMLParser.parse_date(
-                        bill_date_elem.text.strip()
-                    )
+                    bill_date = TallyXMLParser.parse_date(bill_date_elem.text.strip())
                     if bill_date is not None:
                         return (date_val - bill_date).days
         return None

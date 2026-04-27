@@ -199,6 +199,45 @@ def test_parse_vouchers_with_gst() -> None:
             assert sv.gst_amount > Decimal("0")
 
 
+def test_parse_voucher_with_unparseable_date_is_skipped() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="skip-date-guid" VCHTYPE="Sales">'
+        "<ALTERID>100</ALTERID>"
+        "<DATE>INVALID</DATE>"
+        "<VOUCHERNUMBER>SI/BAD</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Cash</LEDGERNAME>"
+        "<AMOUNT>100.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 0
+
+
+def test_parse_outstanding_bill_with_unparseable_date_is_skipped() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<BILL PARTYNAME="Test">'
+        "<DATE>INVALID</DATE>"
+        "<BILLNUMBER>INV001</BILLNUMBER>"
+        "<BILLAMOUNT>5000.00</BILLAMOUNT>"
+        "<OUTSTANDINGAMOUNT>3000.00</OUTSTANDINGAMOUNT>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "</BILL>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    bills = parser.parse_outstanding_bills(xml)
+    assert len(bills) == 0
+
+
 def test_parse_voucher_with_all_fields() -> None:
     xml = build_voucher_xml()
     vouchers = parser.parse_vouchers(xml)

@@ -58,6 +58,18 @@ class TallyProduct(IntEnum):
         return self >= TallyProduct.PRIME_6
 
     @property
+    def supports_json_api(self) -> bool:
+        return self >= TallyProduct.PRIME_7
+
+    @property
+    def supports_base64_encoding(self) -> bool:
+        return self >= TallyProduct.PRIME_7
+
+    @property
+    def supports_tally_drive(self) -> bool:
+        return self >= TallyProduct.PRIME_7
+
+    @property
     def supports_allledger_entries(self) -> bool:
         return self >= TallyProduct.PRIME_1
 
@@ -74,6 +86,18 @@ class TallyProduct(IntEnum):
             TallyProduct.PRIME_7: "TallyPrime 7.x",
         }
         return names.get(self, f"Unknown ({self.value})")
+
+    def capabilities(self) -> dict[str, bool]:
+        """Return a dict of feature name → availability for this version."""
+        return {
+            "is_prime": self.is_prime,
+            "connected_gst": self.supports_connected_gst,
+            "connected_banking": self.supports_connected_banking,
+            "json_api": self.supports_json_api,
+            "base64_encoding": self.supports_base64_encoding,
+            "tally_drive": self.supports_tally_drive,
+            "allledger_entries": self.supports_allledger_entries,
+        }
 
 
 def parse_version_string(version_str: str) -> TallyProduct:
@@ -212,8 +236,7 @@ async def detect_tally_version(
             else:
                 product = TallyProduct.ERP9
                 logger.warning(
-                    "Could not detect Tally version from response; "
-                    "assuming Tally.ERP 9"
+                    "Could not detect Tally version from response; assuming Tally.ERP 9"
                 )
     except Exception as exc:
         product = TallyProduct.ERP9

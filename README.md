@@ -78,6 +78,7 @@ tallybridge doctor            # Run diagnostic checks
 tallybridge config show       # Print current configuration
 tallybridge config set KEY VALUE  # Set a config value
 tallybridge mcp               # Start MCP server (for AI assistants)
+tallybridge mcp --http        # Start MCP server with HTTP transport
 tallybridge --version         # Show version
 ```
 
@@ -120,6 +121,9 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_TALLY_ENCODING` | `utf-8` | Request encoding (`utf-8` or `utf-16`) |
 | `TALLYBRIDGE_DB_PATH` | `tallybridge.duckdb` | Local database file path |
 | `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
+| `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
+| `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error (Tally semantics) |
+| `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport auth |
 | `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
 
 Example `.env`:
@@ -178,9 +182,9 @@ print(q.search("cash"))
 ```
 
 - **Sync** pulls data from TallyPrime via its HTTP API (XML format)
-- **Cache** stores everything in a local DuckDB file — works offline
+- **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
 - **Query** reads from the local file — TallyPrime doesn't need to be running
-- **MCP** exposes the same data to AI assistants via stdio transport
+- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (13 tools)
 
 ## Compatibility
 

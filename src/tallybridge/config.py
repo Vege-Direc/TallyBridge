@@ -12,15 +12,18 @@ class TallyBridgeConfig(BaseSettings):
     tally_port: int = 9000
     tally_company: str | None = None
     tally_encoding: str = "utf-8"
+    strict_status: bool = False
 
     db_path: str = "tallybridge.duckdb"
 
     sync_frequency_minutes: int = 5
+    voucher_batch_size: int = 5000
 
     log_level: str = "INFO"
 
     supabase_url: str | None = None
     supabase_key: str | None = None
+    mcp_api_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_prefix="TALLYBRIDGE_",
@@ -52,6 +55,13 @@ class TallyBridgeConfig(BaseSettings):
             raise ValueError(f"tally_encoding must be one of {allowed}")
         return v.lower()
 
+    @field_validator("voucher_batch_size")
+    @classmethod
+    def validate_voucher_batch_size(cls, v: int) -> int:
+        if not 100 <= v <= 10000:
+            raise ValueError("voucher_batch_size must be between 100 and 10000")
+        return v
+
     async def validate_tally_connection(self) -> None:
         """Ping Tally and raise TallyConnectionError if unreachable."""
         try:
@@ -59,16 +69,16 @@ class TallyBridgeConfig(BaseSettings):
                 await client.post(
                     self.tally_url,
                     content=(
-                        '<ENVELOPE><HEADER><VERSION>1</VERSION>'
-                        '<TALLYREQUEST>Export Data</TALLYREQUEST>'
-                        '<TYPE>Collection</TYPE><ID>Ping</ID></HEADER>'
-                        '<BODY><DESC><STATICVARIABLES>'
-                        '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>'
-                        '</STATICVARIABLES><TDL><TDLMESSAGE>'
+                        "<ENVELOPE><HEADER><VERSION>1</VERSION>"
+                        "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+                        "<TYPE>Collection</TYPE><ID>Ping</ID></HEADER>"
+                        "<BODY><DESC><STATICVARIABLES>"
+                        "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+                        "</STATICVARIABLES><TDL><TDLMESSAGE>"
                         '<COLLECTION NAME="Ping" ISMODIFY="No">'
-                        '<TYPE>Company</TYPE><FETCH>NAME</FETCH>'
-                        '</COLLECTION></TDLMESSAGE></TDL>'
-                        '</DESC></BODY></ENVELOPE>'
+                        "<TYPE>Company</TYPE><FETCH>NAME</FETCH>"
+                        "</COLLECTION></TDLMESSAGE></TDL>"
+                        "</DESC></BODY></ENVELOPE>"
                     ).encode("utf-8"),
                     headers={"Content-Type": "text/xml; charset=utf-8"},
                 )

@@ -1,5 +1,6 @@
 """Tests for MCP SDK server."""
 
+import os
 from datetime import date
 from decimal import Decimal
 
@@ -145,9 +146,7 @@ def test_get_stock_aging(query) -> None:
 
 
 def test_get_stock_aging_with_buckets(query) -> None:
-    result = query.get_stock_aging(
-        as_of_date=date(2025, 4, 15), bucket_days=[60, 120]
-    )
+    result = query.get_stock_aging(as_of_date=date(2025, 4, 15), bucket_days=[60, 120])
     assert isinstance(result, list)
 
 
@@ -190,17 +189,15 @@ def test_query_adds_limit(cache) -> None:
 
 
 def test_query_custom_limit(cache) -> None:
-    result = cache.query_readonly(
-        "SELECT * FROM mst_ledger LIMIT 5"
-    )
+    result = cache.query_readonly("SELECT * FROM mst_ledger LIMIT 5")
     assert isinstance(result, list)
 
 
-def test_mcp_server_has_12_tools() -> None:
+def test_mcp_server_has_13_tools() -> None:
     from tallybridge.mcp.sdk_server import mcp
 
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 12
+    assert len(tools) == 13
 
 
 def test_mcp_lifespan_creates_context() -> None:
@@ -213,3 +210,19 @@ def test_main_entry_point_exists() -> None:
     from tallybridge.mcp.sdk_server import main
 
     assert callable(main)
+
+
+def test_mcp_api_key_in_config() -> None:
+    from tallybridge.config import TallyBridgeConfig
+
+    config = TallyBridgeConfig(mcp_api_key="test-secret-key")
+    assert config.mcp_api_key == "test-secret-key"
+
+
+def test_check_auth_skips_without_api_key() -> None:
+    from tallybridge.config import TallyBridgeConfig, reset_config
+
+    reset_config()
+    os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+    config = TallyBridgeConfig()
+    assert config.mcp_api_key is None

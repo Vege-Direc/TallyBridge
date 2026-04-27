@@ -69,3 +69,15 @@ async def test_validate_tally_connection_raises_when_unreachable() -> None:
 
     with pytest.raises(TallyConnectionError):
         await config.validate_tally_connection()
+
+
+def test_voucher_batch_size_default() -> None:
+    config = TallyBridgeConfig()
+    assert config.voucher_batch_size == 5000
+
+
+def test_voucher_batch_size_validation() -> None:
+    with pytest.raises(ValidationError):
+        TallyBridgeConfig(voucher_batch_size=50)
+    with pytest.raises(ValidationError):
+        TallyBridgeConfig(voucher_batch_size=20000)

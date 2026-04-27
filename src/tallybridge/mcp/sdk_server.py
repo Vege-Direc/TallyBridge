@@ -1,5 +1,6 @@
 """MCP server using official MCP Python SDK — see RECOMMENDATIONS.md P0-1."""
 
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
@@ -13,6 +14,31 @@ from mcp.types import CallToolResult, TextContent
 from tallybridge.cache import TallyCache
 from tallybridge.config import get_config
 from tallybridge.query import TallyQuery
+
+
+def _check_auth(ctx: Context) -> None:
+    """Validate API key for HTTP transport. No-op for stdio (local trust).
+
+    When mcp_api_key is configured and the server is running in HTTP mode,
+    every request must include Authorization: Bearer <key>.
+    """
+    config = get_config()
+    if not config.mcp_api_key:
+        return
+    transport_mode = os.environ.get("TALLYBRIDGE_MCP_TRANSPORT", "stdio")
+    if transport_mode == "stdio":
+        return
+    request = ctx.request_context
+    auth_header = None
+    if hasattr(request, "headers"):
+        auth_header = request.headers.get("Authorization", None)
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise PermissionError(
+            "Authentication required. Set Authorization: Bearer <api_key> header."
+        )
+    token = auth_header[7:]
+    if token != config.mcp_api_key:
+        raise PermissionError("Invalid API key.")
 
 
 @dataclass
@@ -227,6 +253,33 @@ async def query_tally_data(sql: str, limit: int = 1000, ctx: Context = None) -> 
     return app_ctx.cache.query_readonly(sql)
 
 
+@mcp.tool(
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def get_sync_errors(
+    entity_type: str | None = None, limit: int = 100, ctx: Context = None
+) -> list:
+    """Recent sync errors — failed record GUIDs, entity types, error messages."""
+    app_ctx: AppContext = ctx.request_context.lifespan_context
+    return _serialize(
+        app_ctx.cache.get_sync_errors(entity_type=entity_type, limit=limit)
+    )
+
+
 def main() -> None:
-    """Entry point for the tallybridge-mcp console script."""
-    mcp.run(transport="stdio")
+    """Entry point for the tallybridge-mcp console script.
+
+    For stdio transport (default, local trust): no authentication needed.
+    For HTTP transport (--http flag): requires mcp_api_key to be set.
+    Set TALLYBRIDGE_MCP_TRANSPORT=http to enable HTTP mode.
+    """
+    config = get_config()
+    transport_env = os.environ.get("TALLYBRIDGE_MCP_TRANSPORT", "stdio")
+    if transport_env == "http":
+        if not config.mcp_api_key:
+            logger.warning(
+                "MCP HTTP transport running without mcp_api_key — "
+                "anyone with network access can query your data. "
+                "Set TALLYBRIDGE_MCP_API_KEY to secure the endpoint."
+            )
+    mcp.run(transport=transport_env)

@@ -28,21 +28,37 @@ def mock_cache():
     cache.upsert_units.return_value = 4
     cache.upsert_stock_groups.return_value = 2
     cache.upsert_cost_centers.return_value = 3
-    cache.upsert_vouchers.return_value = 7
+    cache.upsert_vouchers.return_value = (7, 100)
     return cache
 
 
 @pytest.fixture
 def mock_parser():
     parser = MagicMock(spec=TallyXMLParser)
-    parser.parse_ledgers.return_value = [MagicMock()] * 5
-    parser.parse_groups.return_value = [MagicMock()] * 3
-    parser.parse_stock_items.return_value = [MagicMock()] * 3
-    parser.parse_voucher_types.return_value = [MagicMock()] * 4
-    parser.parse_units.return_value = [MagicMock()] * 4
-    parser.parse_stock_groups.return_value = [MagicMock()] * 2
-    parser.parse_cost_centers.return_value = [MagicMock()] * 3
-    parser.parse_vouchers.return_value = [MagicMock()] * 7
+    mock_ledger = MagicMock()
+    mock_ledger.alter_id = 50
+    mock_group = MagicMock()
+    mock_group.alter_id = 50
+    mock_stock_item = MagicMock()
+    mock_stock_item.alter_id = 50
+    mock_voucher_type = MagicMock()
+    mock_voucher_type.alter_id = 50
+    mock_unit = MagicMock()
+    mock_unit.alter_id = 50
+    mock_stock_group = MagicMock()
+    mock_stock_group.alter_id = 50
+    mock_cost_center = MagicMock()
+    mock_cost_center.alter_id = 50
+    mock_voucher = MagicMock()
+    mock_voucher.alter_id = 100
+    parser.parse_ledgers.return_value = [mock_ledger] * 5
+    parser.parse_groups.return_value = [mock_group] * 3
+    parser.parse_stock_items.return_value = [mock_stock_item] * 3
+    parser.parse_voucher_types.return_value = [mock_voucher_type] * 4
+    parser.parse_units.return_value = [mock_unit] * 4
+    parser.parse_stock_groups.return_value = [mock_stock_group] * 2
+    parser.parse_cost_centers.return_value = [mock_cost_center] * 3
+    parser.parse_vouchers.return_value = [mock_voucher] * 7
     return parser
 
 
@@ -156,7 +172,7 @@ async def test_parse_entity_unknown(engine: TallySyncEngine) -> None:
 
 async def test_upsert_entity_unknown(engine: TallySyncEngine) -> None:
     result = engine._upsert_entity("nonexistent", [])
-    assert result == 0
+    assert result == (0, 0)
 
 
 async def test_sync_entity_with_filter(
@@ -212,3 +228,48 @@ async def test_get_active_company_auto_detects(
     mock_connection.get_company_list.return_value = ["Auto Co", "Other Co"]
     result = await engine.get_active_company()
     assert result == "Auto Co"
+
+
+async def test_sync_all_with_reconcile(
+    engine: TallySyncEngine, mock_connection, mock_cache
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 100
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_cache.conn.execute.return_value.fetchone.return_value = (5,)
+    results = await engine.sync_all(reconcile=True)
+    assert len(results) == len(SYNC_ORDER)
+
+
+async def test_voucher_batch_size_is_configurable() -> None:
+    engine = TallySyncEngine(
+        AsyncMock(spec=TallyConnection),
+        MagicMock(spec=TallyCache),
+        MagicMock(spec=TallyXMLParser),
+        voucher_batch_size=2000,
+    )
+    assert engine._voucher_batch_size == 2000
+
+
+async def test_engine_has_shutdown_event(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    assert hasattr(engine, "_shutdown_event")
+    assert not engine._shutdown_event.is_set()
+    engine.request_shutdown()
+    assert engine._shutdown_event.is_set()
+
+
+async def test_master_sync_uses_batching_for_large_ranges(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    engine = TallySyncEngine(
+        mock_connection, mock_cache, mock_parser, voucher_batch_size=100
+    )
+    mock_cache.get_last_alter_id.return_value = 0
+    mock_connection.get_alter_id_max.return_value = 250
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection.get_company_list.return_value = ["Test Co"]
+    result = await engine.sync_entity("ledger")
+    assert result.success is True
+    assert mock_connection.export_collection.call_count >= 2

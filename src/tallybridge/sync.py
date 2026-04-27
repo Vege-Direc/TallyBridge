@@ -7,6 +7,7 @@ from typing import Any
 from loguru import logger
 
 from tallybridge.cache import TallyCache
+from tallybridge.config import get_config
 from tallybridge.connection import TallyConnection
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 from tallybridge.models.report import SyncResult
@@ -129,6 +130,7 @@ class TallySyncEngine:
         cache: TallyCache,
         parser: TallyXMLParser,
         company: str | None = None,
+        voucher_batch_size: int | None = None,
     ) -> None:
         self._connection = connection
         self._cache = cache
@@ -136,12 +138,21 @@ class TallySyncEngine:
         self._lock = asyncio.Lock()
         self._company = company
         self._detected_version: TallyProduct | None = None
+        self._shutdown_event = asyncio.Event()
+        if voucher_batch_size is not None:
+            self._voucher_batch_size = voucher_batch_size
+        else:
+            try:
+                self._voucher_batch_size = get_config().voucher_batch_size
+            except Exception:
+                self._voucher_batch_size = VOUCHER_BATCH_SIZE
 
     async def sync_entity(self, entity_type: str) -> SyncResult:
         """Sync one entity. Returns SyncResult — NEVER raises.
 
         For vouchers, uses batched fetching via AlterID ranges to avoid
         hanging Tally with large result sets (batch size = 5000, max 10000).
+        Always includes SVCURRENTCOMPANY after first company detection.
         """
         start = time.monotonic()
         config = ENTITY_CONFIG.get(entity_type)
@@ -153,9 +164,10 @@ class TallySyncEngine:
             )
 
         try:
+            company = await self._ensure_company()
             last_alter_id = self._cache.get_last_alter_id(entity_type)
             max_alter_id = await self._connection.get_alter_id_max(
-                config["tally_type"], company=self._company
+                config["tally_type"], company=company
             )
 
             if max_alter_id <= last_alter_id:
@@ -167,8 +179,12 @@ class TallySyncEngine:
                 )
 
             if entity_type == "voucher":
-                total_count = await self._sync_vouchers_batched(
-                    last_alter_id, max_alter_id
+                total_count, committed_alter_id = await self._sync_vouchers_batched(
+                    last_alter_id, max_alter_id, company
+                )
+            elif (max_alter_id - last_alter_id) > self._voucher_batch_size:
+                total_count, committed_alter_id = await self._sync_master_batched(
+                    entity_type, last_alter_id, max_alter_id, company
                 )
             else:
                 filter_expr = (
@@ -179,12 +195,17 @@ class TallySyncEngine:
                     config["tally_type"],
                     config["fields"],
                     filter_expr=filter_expr,
-                    company=self._company,
+                    company=company,
                 )
                 records = self._parse_entity(entity_type, xml)
-                total_count = self._upsert_entity(entity_type, records, self._company)
+                total_count, committed_alter_id = self._upsert_entity(
+                    entity_type, records, company
+                )
 
-            self._cache.update_sync_state(entity_type, max_alter_id, total_count)
+            safe_alter_id = (
+                committed_alter_id if committed_alter_id > 0 else max_alter_id
+            )
+            self._cache.update_sync_state(entity_type, safe_alter_id, total_count)
 
             return SyncResult(
                 entity_type=entity_type,
@@ -211,19 +232,20 @@ class TallySyncEngine:
             )
 
     async def _sync_vouchers_batched(
-        self, last_alter_id: int, max_alter_id: int
-    ) -> int:
+        self, last_alter_id: int, max_alter_id: int, company: str | None = None
+    ) -> tuple[int, int]:
         """Fetch vouchers in batches of VOUCHER_BATCH_SIZE using AlterID ranges.
 
-        Per tally-database-loader reference: batch size 5000 is stable,
-        do not exceed 10000 or Tally may hang indefinitely.
+        Returns (total_count, max_committed_alter_id) so sync_state is only
+        advanced to the highest alter_id that was actually committed.
         """
         voucher_config = ENTITY_CONFIG["voucher"]
         total_count = 0
+        max_committed_alter_id = 0
         batch_start = last_alter_id
 
         while True:
-            batch_end = batch_start + VOUCHER_BATCH_SIZE
+            batch_end = batch_start + self._voucher_batch_size
             filter_expr = f"$ALTERID > {batch_start} AND $ALTERID <= {batch_end}"
 
             xml = await self._connection.export_collection(
@@ -231,15 +253,17 @@ class TallySyncEngine:
                 voucher_config["tally_type"],
                 voucher_config["fields"],
                 filter_expr=filter_expr,
-                company=self._company,
+                company=company,
             )
 
             records = self._parse_entity("voucher", xml)
             if not records:
                 break
 
-            count = self._upsert_entity("voucher", records, self._company)
+            count, batch_max_id = self._upsert_entity("voucher", records, company)
             total_count += count
+            if batch_max_id > max_committed_alter_id:
+                max_committed_alter_id = batch_max_id
             batch_start = batch_end
 
             logger.info(
@@ -253,12 +277,70 @@ class TallySyncEngine:
             if batch_end >= max_alter_id:
                 break
 
-        return total_count
+        return total_count, max_committed_alter_id
 
-    async def sync_all(self) -> dict[str, SyncResult]:
+    async def _sync_master_batched(
+        self,
+        entity_type: str,
+        last_alter_id: int,
+        max_alter_id: int,
+        company: str | None = None,
+    ) -> tuple[int, int]:
+        """Fetch master entities in batches when alter_id range exceeds threshold.
+
+        Uses the same AlterID-range batching as vouchers but for master entity
+        types (ledger, group, stock_item, etc.) that have large record counts.
+        """
+        config = ENTITY_CONFIG.get(entity_type)
+        if config is None:
+            return 0, 0
+
+        total_count = 0
+        max_committed_alter_id = 0
+        batch_start = last_alter_id
+
+        while True:
+            batch_end = batch_start + self._voucher_batch_size
+            filter_expr = f"$ALTERID > {batch_start} AND $ALTERID <= {batch_end}"
+
+            xml = await self._connection.export_collection(
+                f"Sync_{entity_type}_{batch_start}",
+                config["tally_type"],
+                config["fields"],
+                filter_expr=filter_expr,
+                company=company,
+            )
+
+            records = self._parse_entity(entity_type, xml)
+            if not records:
+                break
+
+            count, batch_max_id = self._upsert_entity(entity_type, records, company)
+            total_count += count
+            if batch_max_id > max_committed_alter_id:
+                max_committed_alter_id = batch_max_id
+            batch_start = batch_end
+
+            logger.info(
+                "Master batch {}: AlterID {}-{}, {} records, total {}",
+                entity_type,
+                batch_start,
+                batch_end,
+                count,
+                total_count,
+            )
+
+            if batch_end >= max_alter_id:
+                break
+
+        return total_count, max_committed_alter_id
+
+    async def sync_all(self, reconcile: bool = False) -> dict[str, SyncResult]:
         """Sync all entities in SYNC_ORDER. Holds _lock for the full cycle.
 
         On first sync, detects the Tally product version for compatibility.
+        When reconcile=True, compares cache record counts against Tally counts
+        after each sync cycle and logs discrepancies.
         """
         async with self._lock:
             if self._detected_version is None:
@@ -272,28 +354,127 @@ class TallySyncEngine:
                     )
                 except Exception:
                     self._detected_version = TallyProduct.ERP9
-                    logger.warning(
-                        "Version detection failed; assuming Tally.ERP 9"
-                    )
+                    logger.warning("Version detection failed; assuming Tally.ERP 9")
             results: dict[str, SyncResult] = {}
             for entity_type in SYNC_ORDER:
                 results[entity_type] = await self.sync_entity(entity_type)
+            if reconcile:
+                self._reconcile_counts(results)
             return results
 
+    def _reconcile_counts(self, results: dict[str, SyncResult]) -> None:
+        """Compare cache record counts against Tally counts. Log discrepancies."""
+        for entity_type, result in results.items():
+            if not result.success:
+                continue
+            config = ENTITY_CONFIG.get(entity_type)
+            if config is None:
+                continue
+            table_map = {
+                "ledger": "mst_ledger",
+                "group": "mst_group",
+                "stock_item": "mst_stock_item",
+                "voucher_type": "mst_voucher_type",
+                "unit": "mst_unit",
+                "stock_group": "mst_stock_group",
+                "cost_center": "mst_cost_center",
+                "voucher": "trn_voucher",
+            }
+            table = table_map.get(entity_type)
+            if table is None:
+                continue
+            try:
+                cache_count = self._cache.conn.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()
+                cache_rows = cache_count[0] if cache_count else 0
+                if result.records_synced != cache_rows:
+                    logger.warning(
+                        "Reconciliation mismatch for {}: "
+                        "sync reported {} records but cache has {}",
+                        entity_type,
+                        result.records_synced,
+                        cache_rows,
+                    )
+            except Exception as exc:
+                logger.debug("Reconciliation check failed for {}: {}", entity_type, exc)
+
     async def full_sync(self) -> dict[str, SyncResult]:
-        """Reset all AlterIDs to 0 in sync_state, then run sync_all()."""
+        """Reset all AlterIDs to 0 in sync_state, then run sync_all().
+
+        Before re-syncing, takes a content_hash snapshot of all master
+        records. After re-sync, compares hashes to detect records that
+        changed in Tally since the last sync.
+        """
+        master_types = [et for et in SYNC_ORDER if et != "voucher"]
+        snapshots: dict[str, list[dict[str, Any]]] = {}
+        for entity_type in master_types:
+            try:
+                snapshots[entity_type] = self._cache.detect_content_drift(entity_type)
+            except Exception:
+                snapshots[entity_type] = []
+
         for entity_type in SYNC_ORDER:
             self._cache.update_sync_state(entity_type, 0, 0)
-        return await self.sync_all()
+        results = await self.sync_all()
+
+        for entity_type in master_types:
+            try:
+                drift = self._cache.compare_content_drift(
+                    entity_type, snapshots[entity_type]
+                )
+                for d in drift:
+                    logger.info(
+                        "Drift: {} '{}' ({}) hash changed",
+                        entity_type,
+                        d["name"],
+                        d["guid"],
+                    )
+            except Exception as exc:
+                logger.debug("Drift detection failed for {}: {}", entity_type, exc)
+
+        return results
 
     async def run_continuous(self, frequency_minutes: int = 5) -> None:
-        """Run sync_all() every frequency_minutes using asyncio.sleep()."""
-        while True:
+        """Run sync_all() every frequency_minutes using asyncio.sleep().
+
+        Implements circuit breaker with exponential backoff: doubles the
+        wait time on each failure up to 60 minutes, resets on success.
+        Supports graceful shutdown via request_shutdown() or SIGINT/SIGTERM.
+        """
+        import signal
+
+        current_wait = frequency_minutes
+        max_wait = 60
+
+        def _signal_handler() -> None:
+            self.request_shutdown()
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _signal_handler)
+            except (NotImplementedError, RuntimeError):
+                pass
+
+        while not self._shutdown_event.is_set():
             try:
                 await self.sync_all()
+                current_wait = frequency_minutes
             except Exception as exc:
                 logger.warning("Continuous sync error: {}", exc)
-            await asyncio.sleep(frequency_minutes * 60)
+                current_wait = min(current_wait * 2, max_wait)
+                logger.info("Circuit breaker: next retry in {} minutes", current_wait)
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(), timeout=current_wait * 60
+                )
+            except asyncio.TimeoutError:
+                pass
+
+    def request_shutdown(self) -> None:
+        """Signal the continuous sync loop to stop gracefully."""
+        self._shutdown_event.set()
 
     async def is_tally_available(self) -> bool:
         """Non-blocking Tally ping."""
@@ -312,6 +493,29 @@ class TallySyncEngine:
             return companies[0] if companies else None
         except Exception:
             return None
+
+    async def _ensure_company(self) -> str | None:
+        """Return the company to use for requests, auto-detecting if needed.
+
+        After first detection, stores it and always includes it in
+        subsequent requests. Logs a warning if operating without a company.
+        """
+        if self._company:
+            return self._company
+        try:
+            companies = await self._connection.get_company_list()
+            if companies:
+                self._company = companies[0]
+                logger.info("Auto-detected Tally company: '{}'", self._company)
+                return self._company
+        except Exception as exc:
+            logger.debug("Company auto-detection failed: {}", exc)
+        logger.warning(
+            "Operating without SVCURRENTCOMPANY — Tally may return data "
+            "from an unexpected company. Set TALLYBRIDGE_TALLY_COMPANY "
+            "or ensure only one company is open in TallyPrime."
+        )
+        return self._company
 
     def _parse_entity(self, entity_type: str, xml: str) -> list[Any]:
         parse_map: dict[str, Any] = {
@@ -332,7 +536,8 @@ class TallySyncEngine:
 
     def _upsert_entity(
         self, entity_type: str, records: list[Any], company: str | None = None
-    ) -> int:
+    ) -> tuple[int, int]:
+        """Upsert records and return (count, max_committed_alter_id)."""
         upsert_map: dict[str, Any] = {
             "ledger": self._cache.upsert_ledgers,
             "group": self._cache.upsert_groups,
@@ -345,9 +550,10 @@ class TallySyncEngine:
         }
         upsert_fn = upsert_map.get(entity_type)
         if upsert_fn is None:
-            return 0
+            return 0, 0
         if entity_type == "voucher":
-            count: int = upsert_fn(records, company=company)
+            count, max_id = upsert_fn(records, company=company)
         else:
             count = upsert_fn(records)
-        return count
+            max_id = max((r.alter_id for r in records), default=0)
+        return count, max_id

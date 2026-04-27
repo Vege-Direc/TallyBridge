@@ -55,3 +55,53 @@ If TallyPrime is on a different machine, replace `localhost` with the IP address
 - The HTTP server port **must be 9000** unless you override `TALLYBRIDGE_TALLY_PORT`.
 - TallyPrime must remain open with the company loaded while TallyBridge is running.
 - The HTTP server does not require authentication by default, but only supports connections from the local network.
+
+## API Explorer and Sample Files
+
+Tally Solutions provides an **API Explorer** tool and sample integration files for developers:
+
+- **TallyPrime API Explorer**: Available within TallyPrime under **F1 > Settings > Connectivity > API Explorer**. Use it to test XML requests interactively and explore available TDL collections.
+- **Integration Demo Samples**: Download `Integration_Demo_Samples.zip` from [Tally Solutions Developer Resources](https://tallysolutions.com/developers/) for working code examples in multiple languages.
+
+## Feature Compatibility Matrix
+
+| Feature | Tally.ERP 9 | TallyPrime 1.x–3.x | TallyPrime 4.x–6.x | TallyPrime 7.0+ |
+|---|---|---|---|---|
+| XML Export (Collection) | ✓ | ✓ | ✓ | ✓ |
+| XML Export (Object) | ✓ | ✓ | ✓ | ✓ |
+| XML Export (Data/Report) | ✓ | ✓ | ✓ | ✓ |
+| AlterID-based sync | ✓ | ✓ | ✓ | ✓ |
+| SVCURRENTCOMPANY | — | ✓ | ✓ | ✓ |
+| Connected GST | — | — | ✓ | ✓ |
+| Connected Banking | — | — | 6.x+ | ✓ |
+| JSON API | — | — | — | ✓ |
+| JSONEx format | — | — | — | ✓ |
+| Base64 encoding (id-encoded) | — | — | — | ✓ |
+| TallyDrive cloud backup | — | — | — | ✓ |
+| SmartFind | — | — | — | ✓ |
+| GSTR-3B JSON export | — | — | — | ✓ |
+
+## Secure Remote Access (SSH Tunnel)
+
+When TallyPrime is running on a remote machine, all HTTP data is transmitted **in plaintext**. This includes company names, ledger details, and financial amounts. To secure this traffic:
+
+### SSH Tunnel Setup
+
+Create an SSH tunnel from your local machine to the Tally server:
+
+```bash
+ssh -L 9000:localhost:9000 user@tally-server.example.com -N
+```
+
+Then configure TallyBridge to connect to `localhost:9000`:
+
+```env
+TALLYBRIDGE_TALLY_HOST=localhost
+TALLYBRIDGE_TALLY_PORT=9000
+```
+
+All traffic between your machine and the Tally server is encrypted via SSH.
+
+### Security Warning
+
+> ⚠️ **When `TALLYBRIDGE_TALLY_HOST` is not `localhost`, data is sent unencrypted over the network.** Use an SSH tunnel or VPN to protect financial data in transit. Never expose TallyPrime's HTTP port directly to the internet.

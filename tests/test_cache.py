@@ -87,7 +87,7 @@ def test_upsert_vouchers_with_entries(db: TallyCache) -> None:
         ],
     )
     count = db.upsert_vouchers([voucher])
-    assert count == 1
+    assert count[0] == 1
     v_rows = db.query("SELECT COUNT(*) as cnt FROM trn_voucher")
     assert v_rows[0]["cnt"] == 1
     le_rows = db.query("SELECT COUNT(*) as cnt FROM trn_ledger_entry")
@@ -146,6 +146,7 @@ def test_health_check(db: TallyCache) -> None:
     assert "record_counts" in health
     assert "last_sync_times" in health
     assert "db_size_mb" in health
+    assert "orphan_count" in health
 
 
 def test_upsert_voucher_types(db: TallyCache) -> None:
@@ -279,7 +280,7 @@ def test_upsert_voucher_error_handling(db: TallyCache) -> None:
         ledger_entries=[TallyVoucherEntry(ledger_name="B", amount=Decimal("200"))],
     )
     count = db.upsert_vouchers([good_voucher])
-    assert count == 1
+    assert count[0] == 1
 
 
 def test_query_raises_cache_error(db: TallyCache) -> None:
@@ -315,8 +316,7 @@ def test_trn_cost_centre_table_exists(db: TallyCache) -> None:
 
 def test_trn_bill_table_exists(db: TallyCache) -> None:
     rows = db.query(
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_name = 'trn_bill'"
+        "SELECT table_name FROM information_schema.tables WHERE table_name = 'trn_bill'"
     )
     assert len(rows) >= 1
 
@@ -371,6 +371,32 @@ def test_upsert_voucher_with_bill_allocation(db: TallyCache) -> None:
     assert rows[0]["bill_credit_period"] == 30
 
 
+def test_reconcile_orphans_no_orphans(db: TallyCache) -> None:
+    count = db.reconcile_orphans()
+    assert count == 0
+
+
+def test_reconcile_orphans_with_orphans(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-orphan",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[
+            TallyVoucherEntry(ledger_name="NonExistentLedger", amount=Decimal("100"))
+        ],
+    )
+    db.upsert_vouchers([voucher])
+    count = db.reconcile_orphans()
+    assert count >= 1
+
+
+def test_upsert_ledgers_empty_list(db: TallyCache) -> None:
+    count = db.upsert_ledgers([])
+    assert count == 0
+
+
 def test_company_column_migration(db: TallyCache) -> None:
     for table in [
         "mst_ledger",
@@ -403,3 +429,150 @@ def test_upsert_voucher_with_company(db: TallyCache) -> None:
     rows = db.query("SELECT company FROM trn_voucher WHERE guid = 'v-co1'")
     assert len(rows) == 1
     assert rows[0]["company"] == "Test Company"
+
+
+def test_content_hash_stored_on_ledger(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    rows = db.query("SELECT content_hash FROM mst_ledger WHERE guid = 'g1'")
+    assert len(rows) == 1
+    assert rows[0]["content_hash"] is not None
+    assert len(rows[0]["content_hash"]) == 64
+
+
+def test_content_hash_consistent(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    rows1 = db.query("SELECT content_hash FROM mst_ledger WHERE guid = 'g1'")
+    db.upsert_ledgers([ledger])
+    rows2 = db.query("SELECT content_hash FROM mst_ledger WHERE guid = 'g1'")
+    assert rows1[0]["content_hash"] == rows2[0]["content_hash"]
+
+
+def test_content_hash_changes_on_field_update(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    rows1 = db.query("SELECT content_hash FROM mst_ledger WHERE guid = 'g1'")
+    updated = TallyLedger(
+        name="Cash",
+        guid="g1",
+        alter_id=2,
+        parent_group="Cash-in-Hand",
+        closing_balance=Decimal("99999"),
+    )
+    db.upsert_ledgers([updated])
+    rows2 = db.query("SELECT content_hash FROM mst_ledger WHERE guid = 'g1'")
+    assert rows1[0]["content_hash"] != rows2[0]["content_hash"]
+
+
+def test_content_hash_migration_applied(db: TallyCache) -> None:
+    for table in [
+        "mst_ledger",
+        "mst_group",
+        "mst_stock_item",
+        "mst_voucher_type",
+        "mst_unit",
+        "mst_stock_group",
+        "mst_cost_center",
+    ]:
+        cols = db.query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ? AND column_name = 'content_hash'",
+            [table],
+        )
+        assert len(cols) == 1, f"content_hash column missing in {table}"
+
+
+def test_detect_content_drift_returns_snapshot(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    snapshot = db.detect_content_drift("ledger")
+    assert len(snapshot) == 1
+    assert snapshot[0]["guid"] == "g1"
+    assert snapshot[0]["content_hash"] is not None
+    assert len(snapshot[0]["content_hash"]) == 64
+
+
+def test_compare_content_drift_no_drift(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    before = db.detect_content_drift("ledger")
+    updated = TallyLedger(
+        name="Cash", guid="g1", alter_id=2, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([updated])
+    drift = db.compare_content_drift("ledger", before)
+    assert drift == []
+
+
+def test_compare_content_drift_with_drift(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    before = db.detect_content_drift("ledger")
+    updated = TallyLedger(
+        name="Cash",
+        guid="g1",
+        alter_id=2,
+        parent_group="Cash-in-Hand",
+        closing_balance=Decimal("99999"),
+    )
+    db.upsert_ledgers([updated])
+    drift = db.compare_content_drift("ledger", before)
+    assert len(drift) == 1
+    assert drift[0]["guid"] == "g1"
+    assert drift[0]["old_hash"] != drift[0]["new_hash"]
+
+
+def test_detect_content_drift_unknown_entity(db: TallyCache) -> None:
+    drift = db.detect_content_drift("nonexistent")
+    assert drift == []
+
+
+def test_sync_errors_table_exists(db: TallyCache) -> None:
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_name = 'sync_errors'"
+    )
+    assert len(rows) >= 1
+
+
+def test_log_and_get_sync_errors(db: TallyCache) -> None:
+    db.log_sync_error("voucher", "guid-v-fail", "Invalid data")
+    errors = db.get_sync_errors()
+    assert len(errors) == 1
+    assert errors[0]["entity_type"] == "voucher"
+    assert errors[0]["record_guid"] == "guid-v-fail"
+
+
+def test_get_sync_errors_filtered(db: TallyCache) -> None:
+    db.log_sync_error("voucher", "guid-1", "Error 1")
+    db.log_sync_error("ledger", "guid-2", "Error 2")
+    errors = db.get_sync_errors(entity_type="voucher")
+    assert len(errors) == 1
+    assert errors[0]["entity_type"] == "voucher"
+
+
+def test_upsert_voucher_logs_sync_error(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-err",
+        alter_id=1,
+        voucher_number="1",
+        voucher_type="Sales",
+        date=date(2025, 1, 1),
+        ledger_entries=[TallyVoucherEntry(ledger_name="A", amount=Decimal("100"))],
+    )
+    db.upsert_vouchers([voucher])
+    errors = db.get_sync_errors(entity_type="voucher")
+    assert len(errors) == 0

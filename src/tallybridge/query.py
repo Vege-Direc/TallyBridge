@@ -408,20 +408,32 @@ class TallyQuery:
         return result
 
     def search(self, query: str, limit: int = 20) -> dict[str, Any]:
-        """Case-insensitive search across ledger names, party names, narrations."""
+        """Search across ledger names, party names, narrations with fuzzy matching.
+
+        Attempts trigram-based fuzzy matching via DuckDB's string similarity
+        functions. Falls back to ILIKE when trigram extension is unavailable.
+        """
         if not query.strip():
             return {"ledgers": [], "vouchers": [], "parties": []}
         pattern = f"%{query}%"
-        ledgers = self._cache.query(
-            "SELECT * FROM mst_ledger WHERE name ILIKE ? LIMIT ?",
-            [pattern, limit],
-        )
-        vouchers = self._cache.query(
-            """SELECT * FROM trn_voucher
-            WHERE (narration ILIKE ? OR party_ledger ILIKE ?) AND is_cancelled = false
-            LIMIT ?""",
-            [pattern, pattern, limit],
-        )
+        fuzzy = self._fuzzy_available()
+        if fuzzy:
+            ledgers = self._fuzzy_search_ledgers(query, limit)
+        else:
+            ledgers = self._cache.query(
+                "SELECT * FROM mst_ledger WHERE name ILIKE ? LIMIT ?",
+                [pattern, limit],
+            )
+        if fuzzy:
+            vouchers = self._fuzzy_search_vouchers(query, limit)
+        else:
+            vouchers = self._cache.query(
+                """SELECT * FROM trn_voucher
+                WHERE (narration ILIKE ? OR party_ledger ILIKE ?)
+                AND is_cancelled = false
+                LIMIT ?""",
+                [pattern, pattern, limit],
+            )
         parties = self._cache.query(
             "SELECT DISTINCT party_ledger as name "
             "FROM trn_voucher WHERE party_ledger ILIKE ? "
@@ -433,6 +445,49 @@ class TallyQuery:
             "vouchers": [self._row_to_voucher(r) for r in vouchers],
             "parties": [r["name"] for r in parties if r["name"]],
         }
+
+    def _fuzzy_available(self) -> bool:
+        """Check if DuckDB string similarity functions are available."""
+        try:
+            self._cache.query("SELECT similarity('test', 'test') as s")
+            return True
+        except Exception:
+            return False
+
+    def _fuzzy_search_ledgers(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Search ledgers using trigram similarity, falling back to ILIKE."""
+        try:
+            return self._cache.query(
+                """SELECT * FROM mst_ledger
+                WHERE name ILIKE ? OR similarity(name, ?) > 0.3
+                ORDER BY similarity(name, ?) DESC LIMIT ?""",
+                [f"%{query}%", query, query, limit],
+            )
+        except Exception:
+            return self._cache.query(
+                "SELECT * FROM mst_ledger WHERE name ILIKE ? LIMIT ?",
+                [f"%{query}%", limit],
+            )
+
+    def _fuzzy_search_vouchers(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Search vouchers using trigram similarity, falling back to ILIKE."""
+        try:
+            return self._cache.query(
+                """SELECT * FROM trn_voucher
+                WHERE (narration ILIKE ? OR party_ledger ILIKE ?
+                       OR similarity(party_ledger, ?) > 0.3)
+                AND is_cancelled = false
+                ORDER BY similarity(party_ledger, ?) DESC LIMIT ?""",
+                [f"%{query}%", f"%{query}%", query, query, limit],
+            )
+        except Exception:
+            return self._cache.query(
+                """SELECT * FROM trn_voucher
+                WHERE (narration ILIKE ? OR party_ledger ILIKE ?)
+                AND is_cancelled = false
+                LIMIT ?""",
+                [f"%{query}%", f"%{query}%", limit],
+            )
 
     @staticmethod
     def _get_bucket(days: int, bucket_days: list[int]) -> str:
