@@ -26,6 +26,14 @@ env/
 *.duckdb
 *.duckdb.wal
 
+# SQLite and generic database files
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Type checkers
 .mypy_cache/
 .pytype/
@@ -57,6 +65,19 @@ report/
 Thumbs.db
 Desktop.ini
 
+# Log files
+*.log
+logs/
+
+# Temporary and backup files
+*.tmp
+*.bak
+*.orig
+
+# Generic lock files (uv.lock is tracked, so this only affects new .lock files)
+*.lock
+!uv.lock
+
 # Python version managers
 .python-version
 .direnv/
@@ -75,3 +96,6 @@ TASKS.md
 SPECS.md
 CLAUDE.md
 AGENTS.md
+
+# Research artifacts
+docs/official-docs-analysis.md
