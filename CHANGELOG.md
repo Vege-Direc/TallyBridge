@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added — Phase 10A: Production Readiness
+
+- **10c**: Improve test coverage from 85% to 93.45% (428 tests). Coverage by module: sdk_server.py 95%, sync.py 97%, parser.py 96%, version.py 90%, query.py 91%, cache.py 91%, connection.py 89%, cli.py 90%
+
 ### Added — Phase 9A: Correctness & Security
 
 - **9a**: Catch `httpx.ReadTimeout` in `connection.py:post_xml()` and raise `TallyConnectionError` with timeout value and batch size suggestion
