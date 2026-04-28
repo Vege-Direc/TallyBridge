@@ -3,7 +3,7 @@
 import base64
 import html
 import re
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import httpx
 from loguru import logger
@@ -230,7 +230,8 @@ class TallyConnection:
         name: str | None = None,
         guid: str | None = None,
         company: str | None = None,
-    ) -> str:
+        parse: bool = False,
+    ) -> Union[str, list[Any]]:
         """Export a single Tally object by Name or GUID using TYPE=Object.
 
         Args:
@@ -238,9 +239,12 @@ class TallyConnection:
             name: Object name to look up (mutually exclusive with guid).
             guid: Object GUID to look up (mutually exclusive with name).
             company: Company name, or None for the active company.
+            parse: If True, parse the XML using the appropriate parser
+                method and return typed model instances.
 
         Returns:
-            Raw XML string of the matching Tally object.
+            Raw XML string if ``parse`` is False, else a list of parsed
+            model instances (typically one element).
 
         Raises:
             TallyConnectionError: Tally not running.
@@ -250,7 +254,37 @@ class TallyConnection:
         if not name and not guid:
             raise ValueError("export_object requires either 'name' or 'guid'")
         xml = self._build_object_xml(tally_type, name, guid, company)
-        return await self.post_xml(xml)
+        raw = await self.post_xml(xml)
+        if not parse:
+            return raw
+
+        from tallybridge.parser import TallyXMLParser
+
+        parser = TallyXMLParser()
+        type_lower = tally_type.lower().replace(" ", "")
+        if type_lower in ("ledger", "ledgers"):
+            return parser.parse_ledgers(raw)
+        if type_lower in ("group", "groups"):
+            return parser.parse_groups(raw)
+        if type_lower in ("stockitem", "stockitems"):
+            return parser.parse_stock_items(raw)
+        if type_lower in ("stockgroup", "stockgroups"):
+            return parser.parse_stock_groups(raw)
+        if type_lower in ("voucher", "vouchers"):
+            return parser.parse_vouchers(raw)
+        if type_lower in ("unit", "units"):
+            return parser.parse_units(raw)
+        if type_lower in ("vouchertype", "vouchertypes"):
+            return parser.parse_voucher_types(raw)
+        if type_lower in ("costcenter", "costcentres", "costcentre"):
+            return parser.parse_cost_centers(raw)
+        if type_lower in ("godown", "godowns"):
+            return parser.parse_stock_groups(raw)
+        logger.warning(
+            "Unknown tally_type '{}' for parsing, returning raw XML",
+            tally_type,
+        )
+        return [raw]
 
     async def fetch_report(
         self,

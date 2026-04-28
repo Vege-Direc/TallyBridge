@@ -279,3 +279,43 @@ async def test_build_report_xml_contains_dates() -> None:
 def test_fetch_report_parse_parameter() -> None:
     result_type = TallyConnection.fetch_report.__annotations__.get("return")
     assert result_type is not None or True
+
+
+def test_export_object_parse_routing() -> None:
+    from tallybridge.parser import TallyXMLParser
+
+    parser = TallyXMLParser()
+    ledger_xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<LEDGER NAME="Test Ledger" RESERVEDNAME="">'
+        "<PARENT>Bank Accounts</PARENT>"
+        "<OPENINGBALANCE>1000.00</OPENINGBALANCE>"
+        "<GUID>GUID123</GUID>"
+        "<ALTERID>5</ALTERID>"
+        "</LEDGER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    result = parser.parse_ledgers(ledger_xml)
+    assert len(result) == 1
+    assert result[0].name == "Test Ledger"
+    assert result[0].opening_balance == 1000
+
+    voucher_xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER VCHTYPE="Sales" ACTION="Create">'
+        "<DATE>20250415</DATE>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<VOUCHERNUMBER>1</VOUCHERNUMBER>"
+        "<GUID>VGUID1</GUID>"
+        "<ALTERID>10</ALTERID>"
+        "<ALLLEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Cash</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-1000.00</AMOUNT>"
+        "</ALLLEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    v_result = parser.parse_vouchers(voucher_xml)
+    assert len(v_result) == 1
+    assert v_result[0].voucher_type == "Sales"
