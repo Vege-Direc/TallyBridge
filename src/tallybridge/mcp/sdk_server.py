@@ -100,7 +100,9 @@ def _get_app_ctx(ctx: _Ctx) -> AppContext:
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def get_tally_digest(date: str | None = None, ctx: _Ctx | None = None) -> Any:
+async def get_tally_digest(
+    date: str | None = None, company: str | None = None, ctx: _Ctx | None = None
+) -> Any:
     """Complete business summary: sales, purchases, balances, overdue parties."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     d = _parse_date(date)
@@ -109,7 +111,10 @@ async def get_tally_digest(date: str | None = None, ctx: _Ctx | None = None) -> 
 
 @mcp.tool(annotations=_ANNOTATIONS)
 async def get_ledger_balance(
-    ledger_name: str, date: str | None = None, ctx: _Ctx | None = None
+    ledger_name: str,
+    date: str | None = None,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
 ) -> Any:
     """Closing balance of any ledger. Positive=Dr, Negative=Cr."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
@@ -124,6 +129,7 @@ async def get_ledger_balance(
 async def get_receivables(
     overdue_only: bool = False,
     min_days_overdue: int = 0,
+    company: str | None = None,
     ctx: _Ctx | None = None,
 ) -> Any:
     """Outstanding sales invoices — money owed to the business."""
@@ -136,7 +142,9 @@ async def get_receivables(
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def get_party_outstanding(party_name: str, ctx: _Ctx | None = None) -> Any:
+async def get_party_outstanding(
+    party_name: str, company: str | None = None, ctx: _Ctx | None = None
+) -> Any:
     """Full receivable/payable position with one party."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.query.get_party_outstanding(party_name))
@@ -147,6 +155,7 @@ async def get_sales_summary(
     from_date: str,
     to_date: str,
     group_by: str = "day",
+    company: str | None = None,
     ctx: _Ctx | None = None,
 ) -> Any:
     """Sales by day/week/month/party/item for a date range."""
@@ -161,7 +170,12 @@ async def get_sales_summary(
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def get_gst_summary(from_date: str, to_date: str, ctx: _Ctx | None = None) -> Any:
+async def get_gst_summary(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
     """GST collected, ITC, and net liability for a period."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
@@ -173,21 +187,30 @@ async def get_gst_summary(from_date: str, to_date: str, ctx: _Ctx | None = None)
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def search_tally(query: str, limit: int = 20, ctx: _Ctx | None = None) -> Any:
+async def search_tally(
+    query: str,
+    limit: int = 20,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
     """Search ledgers, parties, voucher narrations."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.query.search(query=query, limit=limit))
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def get_sync_status(ctx: _Ctx | None = None) -> Any:
+async def get_sync_status(company: str | None = None, ctx: _Ctx | None = None) -> Any:
     """When data was last synced and record counts."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.cache.get_sync_status())
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def get_low_stock(threshold: float = 0, ctx: _Ctx | None = None) -> Any:
+async def get_low_stock(
+    threshold: float = 0,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
     """Stock items at or below quantity threshold."""
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     items = app_ctx.query.get_low_stock_items(
@@ -202,6 +225,7 @@ async def get_low_stock(threshold: float = 0, ctx: _Ctx | None = None) -> Any:
 async def get_stock_aging(
     date: str | None = None,
     bucket_days: list[int] | None = None,
+    company: str | None = None,
     ctx: _Ctx | None = None,
 ) -> Any:
     """How long stock has been sitting — aging by day buckets."""
@@ -218,6 +242,7 @@ async def get_cost_center_summary(
     from_date: str,
     to_date: str,
     cost_center_name: str | None = None,
+    company: str | None = None,
     ctx: _Ctx | None = None,
 ) -> Any:
     """Income and expense breakdown by department or project cost centre."""
@@ -232,7 +257,75 @@ async def get_cost_center_summary(
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def query_tally_data(sql: str, limit: int = 1000, ctx: _Ctx | None = None) -> Any:
+async def get_balance_sheet(
+    to_date: str | None = None,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Balance sheet grouped by assets and liabilities."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(app_ctx.query.get_balance_sheet(to_date=_parse_date(to_date)))
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_profit_loss(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Profit & Loss grouped by income and expense for a period."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_profit_loss(
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_ledger_account(
+    ledger_name: str,
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Voucher-level general ledger for a specific ledger and date range."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_ledger_account(
+            ledger_name=ledger_name,
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_stock_item_account(
+    item_name: str,
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Quantity movements for a stock item — inward and outward with dates."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_stock_item_account(
+            item_name=item_name,
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def query_tally_data(
+    sql: str, limit: int = 1000, ctx: _Ctx | None = None
+) -> Any:
     """Run a custom SQL SELECT on the local cache. Tables: mst_ledger, mst_group,
     mst_stock_item, mst_unit, mst_stock_group, mst_cost_center, trn_voucher,
     trn_ledger_entry, trn_inventory_entry, trn_cost_centre, trn_bill."""
@@ -252,55 +345,6 @@ async def get_sync_errors(
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.cache.get_sync_errors(entity_type=entity_type, limit=limit)
-    )
-
-
-@mcp.tool(annotations=_ANNOTATIONS)
-async def get_balance_sheet(to_date: str | None = None, ctx: _Ctx | None = None) -> Any:
-    """Balance sheet grouped by assets and liabilities."""
-    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
-    return _serialize(app_ctx.query.get_balance_sheet(to_date=_parse_date(to_date)))
-
-
-@mcp.tool(annotations=_ANNOTATIONS)
-async def get_profit_loss(from_date: str, to_date: str, ctx: _Ctx | None = None) -> Any:
-    """Profit & Loss grouped by income and expense for a period."""
-    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
-    return _serialize(
-        app_ctx.query.get_profit_loss(
-            from_date=_parse_date(from_date) or date_type.today(),
-            to_date=_parse_date(to_date) or date_type.today(),
-        )
-    )
-
-
-@mcp.tool(annotations=_ANNOTATIONS)
-async def get_ledger_account(
-    ledger_name: str, from_date: str, to_date: str, ctx: _Ctx | None = None
-) -> Any:
-    """Voucher-level general ledger for a specific ledger and date range."""
-    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
-    return _serialize(
-        app_ctx.query.get_ledger_account(
-            ledger_name=ledger_name,
-            from_date=_parse_date(from_date) or date_type.today(),
-            to_date=_parse_date(to_date) or date_type.today(),
-        )
-    )
-
-
-@mcp.tool(annotations=_ANNOTATIONS)
-async def get_stock_item_account(
-    item_name: str, from_date: str, to_date: str, ctx: _Ctx | None = None
-) -> Any:
-    """Quantity movements for a stock item — inward and outward with dates."""
-    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
-    return _serialize(
-        app_ctx.query.get_stock_item_account(
-            item_name=item_name,
-            from_date=_parse_date(from_date) or date_type.today(),
-            to_date=_parse_date(to_date) or date_type.today(),
-        )
     )
 
 

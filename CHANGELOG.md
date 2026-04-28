@@ -7,6 +7,7 @@
 - **10e**: Add `parse=True` parameter to `export_object()` that auto-detects object type and routes to the appropriate parser method (parse_ledgers, parse_vouchers, etc.) returning typed model instances
 - **10f**: Add 4 MCP tools: `get_balance_sheet`, `get_profit_loss`, `get_ledger_account`, `get_stock_item_account`. Corresponding query methods added to `TallyQuery`. Tool count: 13 → 17
 - **10g**: Add deletion tracking: `detect_deletions()` in `TallySyncEngine` fetches all GUIDs from Tally, compares against cache, deletes orphans with cascade for vouchers. `get_cached_guids()` and `delete_records_by_guid()` in `TallyCache`. Integrated into `full_sync()`
+- **10h**: Add optional `company` parameter to all 15 MCP tools (except `query_tally_data` which uses SQL directly)
 
 ### Added — Phase 9A: Correctness & Security
 
