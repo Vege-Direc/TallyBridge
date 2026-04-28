@@ -1,6 +1,6 @@
 """Tests for sync — SPECS.md §7."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -110,6 +110,8 @@ async def test_full_sync_resets_alter_ids(
 ) -> None:
     mock_connection.get_alter_id_max.return_value = 100
     mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection.detect_version = AsyncMock(return_value=TallyProduct.PRIME_4)
+    mock_cache.get_cached_guids.return_value = set()
     await engine.full_sync()
     reset_calls = [
         call for call in mock_cache.update_sync_state.call_args_list if call[0][1] == 0
@@ -299,11 +301,10 @@ async def test_sync_all_version_detection_fails_gracefully(
     mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
     mock_connection._detected_version = None
     engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
-    with patch(
-        "tallybridge.sync.detect_tally_version",
-        side_effect=RuntimeError("unexpected"),
-    ):
-        await engine.sync_all()
+    mock_connection.detect_version = AsyncMock(
+        side_effect=RuntimeError("unexpected")
+    )
+    await engine.sync_all()
     assert engine._detected_version == TallyProduct.ERP9
 
 
@@ -409,6 +410,7 @@ async def test_full_sync_drift_detection(
 ) -> None:
     mock_connection.get_alter_id_max.return_value = 100
     mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection.detect_version = AsyncMock(return_value=TallyProduct.PRIME_4)
     mock_cache.detect_content_drift.return_value = [
         {"guid": "g1", "name": "Test", "content_hash": "abc123"}
     ]
@@ -421,6 +423,7 @@ async def test_full_sync_drift_detection(
             "new_hash": "def456",
         }
     ]
+    mock_cache.get_cached_guids.return_value = set()
     engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
     results = await engine.full_sync()
     assert len(results) == len(SYNC_ORDER)
@@ -431,7 +434,9 @@ async def test_full_sync_drift_detection_exception(
 ) -> None:
     mock_connection.get_alter_id_max.return_value = 100
     mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection.detect_version = AsyncMock(return_value=TallyProduct.PRIME_4)
     mock_cache.detect_content_drift.side_effect = Exception("drift failed")
+    mock_cache.get_cached_guids.return_value = set()
     engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
     results = await engine.full_sync()
     assert len(results) == len(SYNC_ORDER)

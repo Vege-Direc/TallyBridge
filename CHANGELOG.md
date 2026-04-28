@@ -8,6 +8,7 @@
 - **10f**: Add 4 MCP tools: `get_balance_sheet`, `get_profit_loss`, `get_ledger_account`, `get_stock_item_account`. Corresponding query methods added to `TallyQuery`. Tool count: 13 → 17
 - **10g**: Add deletion tracking: `detect_deletions()` in `TallySyncEngine` fetches all GUIDs from Tally, compares against cache, deletes orphans with cascade for vouchers. `get_cached_guids()` and `delete_records_by_guid()` in `TallyCache`. Integrated into `full_sync()`
 - **10h**: Add optional `company` parameter to all 15 MCP tools (except `query_tally_data` which uses SQL directly)
+- **10i**: Add `detect_version()` method on `TallyConnection` that calls `detect_tally_version()` and logs the capability set. Sync engine uses `connection.detect_version()` instead of importing `detect_tally_version` directly
 
 ### Added — Phase 9A: Correctness & Security
 

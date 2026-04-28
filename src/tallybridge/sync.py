@@ -12,7 +12,7 @@ from tallybridge.connection import TallyConnection
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 from tallybridge.models.report import SyncResult
 from tallybridge.parser import TallyXMLParser
-from tallybridge.version import TallyProduct, detect_tally_version
+from tallybridge.version import TallyProduct
 
 ENTITY_CONFIG: dict[str, dict[str, Any]] = {
     "group": {
@@ -345,9 +345,7 @@ class TallySyncEngine:
         async with self._lock:
             if self._detected_version is None:
                 try:
-                    self._detected_version = await detect_tally_version(
-                        self._connection
-                    )
+                    self._detected_version = await self._connection.detect_version()
                     logger.info(
                         "Tally version detected: {}",
                         self._detected_version.display_name,

@@ -54,6 +54,27 @@ class TallyConnection:
         ):
             return False
 
+    async def detect_version(self) -> "TallyProduct":
+        """Detect the Tally product version and cache it.
+
+        Calls ``detect_tally_version()`` which queries Tally for
+        its version string. The result is cached on
+        ``self._detected_version`` and the capability set is logged.
+
+        Returns:
+            The detected ``TallyProduct`` enum value.
+        """
+        from tallybridge.version import detect_tally_version
+
+        product = await detect_tally_version(self)
+        caps = product.capabilities()
+        logger.info(
+            "Tally version: {} | Capabilities: {}",
+            product.display_name,
+            ", ".join(f"{k}={'yes' if v else 'no'}" for k, v in caps.items()),
+        )
+        return product
+
     async def get_company_list(self) -> list[str]:
         """List all company names currently open in Tally.
 
