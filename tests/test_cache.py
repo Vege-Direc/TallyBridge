@@ -576,3 +576,95 @@ def test_upsert_voucher_logs_sync_error(db: TallyCache) -> None:
     db.upsert_vouchers([voucher])
     errors = db.get_sync_errors(entity_type="voucher")
     assert len(errors) == 0
+
+
+def test_upsert_groups_empty_list(db: TallyCache) -> None:
+    count = db.upsert_groups([])
+    assert count == 0
+
+
+def test_upsert_stock_items_empty_list(db: TallyCache) -> None:
+    count = db.upsert_stock_items([])
+    assert count == 0
+
+
+def test_upsert_voucher_types_empty_list(db: TallyCache) -> None:
+    count = db.upsert_voucher_types([])
+    assert count == 0
+
+
+def test_upsert_units_empty_list(db: TallyCache) -> None:
+    count = db.upsert_units([])
+    assert count == 0
+
+
+def test_upsert_stock_groups_empty_list(db: TallyCache) -> None:
+    count = db.upsert_stock_groups([])
+    assert count == 0
+
+
+def test_upsert_cost_centers_empty_list(db: TallyCache) -> None:
+    count = db.upsert_cost_centers([])
+    assert count == 0
+
+
+def test_upsert_vouchers_empty_list(db: TallyCache) -> None:
+    count, max_id = db.upsert_vouchers([])
+    assert count == 0
+    assert max_id == 0
+
+
+def test_compare_content_drift_new_record_not_in_before(db: TallyCache) -> None:
+    ledger = TallyLedger(
+        name="Cash", guid="g1", alter_id=1, parent_group="Cash-in-Hand"
+    )
+    db.upsert_ledgers([ledger])
+    before = db.detect_content_drift("ledger")
+    new_ledger = TallyLedger(
+        name="Bank", guid="g2", alter_id=2, parent_group="Bank Accounts"
+    )
+    db.upsert_ledgers([new_ledger])
+    drift = db.compare_content_drift("ledger", before)
+    assert isinstance(drift, list)
+
+
+def test_query_readonly_failure_raises(db: TallyCache) -> None:
+    with pytest.raises(TallyBridgeCacheError):
+        db.query_readonly("SELECT * FROM nonexistent_table_xyz")
+
+
+def test_get_outstanding_receivables(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-rec",
+        alter_id=1,
+        voucher_number="SI/001",
+        voucher_type="Sales",
+        date=date(2025, 4, 1),
+        total_amount=Decimal("50000"),
+        ledger_entries=[TallyVoucherEntry(ledger_name="Cash", amount=Decimal("50000"))],
+    )
+    db.upsert_vouchers([voucher])
+    bills = db.get_outstanding_receivables()
+    assert isinstance(bills, list)
+
+
+def test_get_outstanding_payables(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-pay",
+        alter_id=2,
+        voucher_number="PI/001",
+        voucher_type="Purchase",
+        date=date(2025, 4, 1),
+        total_amount=Decimal("30000"),
+        ledger_entries=[TallyVoucherEntry(ledger_name="Bank", amount=Decimal("30000"))],
+    )
+    db.upsert_vouchers([voucher])
+    bills = db.get_outstanding_payables()
+    assert isinstance(bills, list)
+
+
+def test_get_sync_status_after_sync(db: TallyCache) -> None:
+    db.update_sync_state("ledger", 100, 50)
+    status = db.get_sync_status()
+    assert "ledger" in status
+    assert status["ledger"]["last_alter_id"] == 100

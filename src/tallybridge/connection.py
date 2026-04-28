@@ -3,6 +3,7 @@
 import base64
 import html
 import re
+from typing import TYPE_CHECKING
 
 import httpx
 from loguru import logger
@@ -16,10 +17,16 @@ from tenacity import (
 from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 
+if TYPE_CHECKING:
+    from tallybridge.version import TallyProduct
+
 
 class TallyConnection:
+    _detected_version: "TallyProduct | None"
+
     def __init__(self, config: TallyBridgeConfig) -> None:
         self._config = config
+        self._detected_version = None
         transport = httpx.AsyncHTTPTransport(retries=3)
         limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
         timeout = httpx.Timeout(30.0, connect=10.0, read=60.0, write=10.0, pool=5.0)

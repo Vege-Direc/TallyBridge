@@ -525,13 +525,13 @@ class TallyCache:
                         company,
                     ],
                 )
-                for entry in voucher.ledger_entries:
+                for le in voucher.ledger_entries:
                     self.conn.execute(
                         """INSERT INTO trn_ledger_entry
                         (voucher_guid, ledger_name, amount) VALUES (?, ?, ?)""",
-                        [voucher.guid, entry.ledger_name, entry.amount],
+                        [voucher.guid, le.ledger_name, le.amount],
                     )
-                for entry in voucher.inventory_entries:
+                for ie in voucher.inventory_entries:
                     self.conn.execute(
                         """INSERT INTO trn_inventory_entry
                         (voucher_guid, stock_item_name, quantity,
@@ -539,12 +539,12 @@ class TallyCache:
                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         [
                             voucher.guid,
-                            entry.stock_item_name,
-                            entry.quantity,
-                            entry.rate,
-                            entry.amount,
-                            entry.godown,
-                            entry.batch,
+                            ie.stock_item_name,
+                            ie.quantity,
+                            ie.rate,
+                            ie.amount,
+                            ie.godown,
+                            ie.batch,
                         ],
                     )
                 for cc in voucher.cost_centre_allocations:

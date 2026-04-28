@@ -3,10 +3,19 @@
 import os
 from datetime import date
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
-from tallybridge.mcp.sdk_server import _parse_date, _serialize
+from tallybridge.mcp.sdk_server import (
+    AppContext,
+    _check_auth,
+    _error_result,
+    _get_app_ctx,
+    _parse_date,
+    _serialize,
+    app_lifespan,
+)
 from tallybridge.query import TallyQuery
 
 
@@ -18,6 +27,18 @@ def query(populated_db):
 @pytest.fixture
 def cache(populated_db):
     return populated_db
+
+
+@pytest.fixture
+def app_ctx(populated_db):
+    return AppContext(cache=populated_db, query=TallyQuery(populated_db))
+
+
+@pytest.fixture
+def mock_ctx(app_ctx):
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = app_ctx
+    return ctx
 
 
 def test_serialize_decimal() -> None:
@@ -75,6 +96,240 @@ def test_parse_date_invalid() -> None:
         _parse_date("not-a-date")
     except ValueError:
         pass
+
+
+def test_error_result() -> None:
+    result = _error_result("test error")
+    assert result.isError is True
+    assert len(result.content) == 1
+    assert result.content[0].text == "test error"
+
+
+def test_get_app_ctx(mock_ctx) -> None:
+    ctx = _get_app_ctx(mock_ctx)
+    assert isinstance(ctx, AppContext)
+    assert isinstance(ctx.cache, type(mock_ctx.request_context.lifespan_context.cache))
+    assert isinstance(ctx.query, TallyQuery)
+
+
+def test_check_auth_no_api_key() -> None:
+    from tallybridge.config import reset_config
+
+    reset_config()
+    os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+    ctx = MagicMock()
+    _check_auth(ctx)
+
+
+def test_check_auth_stdio_transport_skips() -> None:
+    from tallybridge.config import TallyBridgeConfig, reset_config
+
+    reset_config()
+    os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "stdio"
+    try:
+        _ = TallyBridgeConfig(mcp_api_key="secret")
+        ctx = MagicMock()
+        _check_auth(ctx)
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)
+
+
+def test_check_auth_http_with_valid_key() -> None:
+    from tallybridge.config import reset_config
+
+    reset_config()
+    os.environ["TALLYBRIDGE_MCP_API_KEY"] = "test-key"
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "http"
+    try:
+        ctx = MagicMock()
+        ctx.request_context.headers = {"Authorization": "Bearer test-key"}
+        _check_auth(ctx)
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)
+
+
+def test_check_auth_http_with_invalid_key() -> None:
+    from tallybridge.config import reset_config
+
+    reset_config()
+    os.environ["TALLYBRIDGE_MCP_API_KEY"] = "correct-key"
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "http"
+    try:
+        ctx = MagicMock()
+        ctx.request_context.headers = {"Authorization": "Bearer wrong-key"}
+        with pytest.raises(PermissionError, match="Invalid API key"):
+            _check_auth(ctx)
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)
+
+
+def test_check_auth_http_no_auth_header() -> None:
+    from tallybridge.config import reset_config
+
+    reset_config()
+    os.environ["TALLYBRIDGE_MCP_API_KEY"] = "test-key"
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "http"
+    try:
+        ctx = MagicMock()
+        ctx.request_context.headers = {}
+        with pytest.raises(PermissionError, match="Authentication required"):
+            _check_auth(ctx)
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)
+
+
+def test_check_auth_http_no_headers_attribute() -> None:
+    from tallybridge.config import reset_config
+
+    reset_config()
+    os.environ["TALLYBRIDGE_MCP_API_KEY"] = "test-key"
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "http"
+    try:
+        ctx = MagicMock()
+        del ctx.request_context.headers
+        with pytest.raises(PermissionError, match="Authentication required"):
+            _check_auth(ctx)
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)
+
+
+async def test_app_lifespan_yields_context() -> None:
+    server = MagicMock()
+    async with app_lifespan(server) as ctx:
+        assert isinstance(ctx, AppContext)
+        assert isinstance(ctx.cache, type(ctx.cache))
+        assert isinstance(ctx.query, TallyQuery)
+
+
+async def test_get_tally_digest_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_tally_digest
+
+    result = await get_tally_digest(date="2025-04-15", ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_tally_digest_no_date(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_tally_digest
+
+    result = await get_tally_digest(date=None, ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_ledger_balance_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_ledger_balance
+
+    result = await get_ledger_balance(ledger_name="Cash", ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_ledger_balance_not_found(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_ledger_balance
+
+    result = await get_ledger_balance(ledger_name="NonExistent", ctx=mock_ctx)
+    assert result.isError is True
+    assert "not found" in result.content[0].text.lower()
+
+
+async def test_get_receivables_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_receivables
+
+    result = await get_receivables(overdue_only=False, min_days_overdue=0, ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_party_outstanding_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_party_outstanding
+
+    result = await get_party_outstanding(party_name="Sharma Trading Co", ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_sales_summary_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_sales_summary
+
+    result = await get_sales_summary(
+        from_date="2025-01-01", to_date="2025-12-31", group_by="day", ctx=mock_ctx
+    )
+    assert result is not None
+
+
+async def test_get_gst_summary_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_gst_summary
+
+    result = await get_gst_summary(
+        from_date="2025-01-01", to_date="2025-12-31", ctx=mock_ctx
+    )
+    assert result is not None
+
+
+async def test_search_tally_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import search_tally
+
+    result = await search_tally(query="Cash", limit=10, ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_sync_status_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_sync_status
+
+    result = await get_sync_status(ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_low_stock_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_low_stock
+
+    result = await get_low_stock(threshold=0.0, ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_stock_aging_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_stock_aging
+
+    result = await get_stock_aging(date="2025-04-15", bucket_days=None, ctx=mock_ctx)
+    assert result is not None
+
+
+async def test_get_cost_center_summary_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_cost_center_summary
+
+    result = await get_cost_center_summary(
+        from_date="2025-01-01",
+        to_date="2025-12-31",
+        cost_center_name=None,
+        ctx=mock_ctx,
+    )
+    assert result is not None
+
+
+async def test_query_tally_data_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import query_tally_data
+
+    result = await query_tally_data(
+        sql="SELECT * FROM mst_ledger", limit=10, ctx=mock_ctx
+    )
+    assert isinstance(result, list)
+
+
+async def test_query_tally_data_with_limit(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import query_tally_data
+
+    result = await query_tally_data(
+        sql="SELECT * FROM mst_ledger LIMIT 5", limit=10, ctx=mock_ctx
+    )
+    assert isinstance(result, list)
+
+
+async def test_get_sync_errors_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_sync_errors
+
+    result = await get_sync_errors(entity_type=None, limit=10, ctx=mock_ctx)
+    assert result is not None
 
 
 def test_get_tally_digest(query) -> None:
@@ -226,3 +481,16 @@ def test_check_auth_skips_without_api_key() -> None:
     os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
     config = TallyBridgeConfig()
     assert config.mcp_api_key is None
+
+
+def test_main_warns_no_api_key_http() -> None:
+    os.environ["TALLYBRIDGE_MCP_TRANSPORT"] = "http"
+    os.environ.pop("TALLYBRIDGE_MCP_API_KEY", None)
+    try:
+        from tallybridge.config import TallyBridgeConfig, reset_config
+
+        reset_config()
+        config = TallyBridgeConfig()
+        assert config.mcp_api_key is None
+    finally:
+        os.environ.pop("TALLYBRIDGE_MCP_TRANSPORT", None)

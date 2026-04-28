@@ -541,3 +541,472 @@ def test_parse_bill_credit_period_dueondate_fallback() -> None:
     assert len(vouchers) == 1
     ba = vouchers[0].bill_allocations[0]
     assert ba.bill_credit_period == 30
+
+
+def test_parse_ledger_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<LEDGER NAME="Bad Ledger"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</LEDGER>"
+        '<LEDGER NAME="Good Ledger"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good Ledger</NAME>"
+        "<PARENT>Cash-in-Hand</PARENT>"
+        "<OPENINGBALANCE>0</OPENINGBALANCE>"
+        "<CLOSINGBALANCE>100</CLOSINGBALANCE>"
+        "<ISREVENUE>No</ISREVENUE>"
+        "<AFFECTSGROSSPROFIT>No</AFFECTSGROSSPROFIT>"
+        "</LEDGER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    ledgers = parser.parse_ledgers(xml)
+    assert len(ledgers) == 1
+    assert ledgers[0].name == "Good Ledger"
+
+
+def test_parse_group_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<GROUP NAME="Bad Group"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</GROUP>"
+        '<GROUP NAME="Good Group"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good Group</NAME>"
+        "<PARENT>Primary</PARENT>"
+        "<PRIMARYGROUP>Yes</PRIMARYGROUP>"
+        "<ISREVENUE>No</ISREVENUE>"
+        "<AFFECTSGROSSPROFIT>No</AFFECTSGROSSPROFIT>"
+        "<NETDEBITCREDIT>Dr</NETDEBITCREDIT>"
+        "</GROUP>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    groups = parser.parse_groups(xml)
+    assert len(groups) == 1
+    assert groups[0].name == "Good Group"
+
+
+def test_parse_stock_item_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<STOCKITEM NAME="Bad Item"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</STOCKITEM>"
+        '<STOCKITEM NAME="Good Item"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good Item</NAME>"
+        "<PARENT>Widgets</PARENT>"
+        "<BASEUNITS>Nos</BASEUNITS>"
+        "<CLOSINGBALANCE>5 Nos</CLOSINGBALANCE>"
+        "<CLOSINGVALUE>500.00</CLOSINGVALUE>"
+        "</STOCKITEM>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    items = parser.parse_stock_items(xml)
+    assert len(items) == 1
+    assert items[0].name == "Good Item"
+
+
+def test_parse_voucher_type_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHERTYPE NAME="Bad"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</VOUCHERTYPE>"
+        '<VOUCHERTYPE NAME="Good"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good</NAME>"
+        "<PARENT>Accounting Vouchers</PARENT>"
+        "</VOUCHERTYPE>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vtypes = parser.parse_voucher_types(xml)
+    assert len(vtypes) == 1
+    assert vtypes[0].name == "Good"
+
+
+def test_parse_unit_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<UNIT NAME="Bad"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</UNIT>"
+        '<UNIT NAME="Good"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good</NAME>"
+        "<UNITTYPE>Simple</UNITTYPE>"
+        "<DECIMALPLACES>2</DECIMALPLACES>"
+        "</UNIT>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    units = parser.parse_units(xml)
+    assert len(units) == 1
+    assert units[0].name == "Good"
+
+
+def test_parse_stock_group_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<STOCKGROUP NAME="Bad"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</STOCKGROUP>"
+        '<STOCKGROUP NAME="Good"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good</NAME>"
+        "<PARENT>Primary</PARENT>"
+        "<SHOULDQUANTITIESADD>Yes</SHOULDQUANTITIESADD>"
+        "</STOCKGROUP>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    groups = parser.parse_stock_groups(xml)
+    assert len(groups) == 1
+    assert groups[0].name == "Good"
+
+
+def test_parse_cost_center_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<COSTCENTRE NAME="Bad"><GUID>g1</GUID>'
+        "<ALTERID>not_a_number</ALTERID>"
+        "</COSTCENTRE>"
+        '<COSTCENTRE NAME="Good"><GUID>g2</GUID>'
+        "<ALTERID>10</ALTERID><NAME>Good</NAME>"
+        "<PARENT>Primary</PARENT>"
+        "<COSTCENTRETYPE>Primary</COSTCENTRETYPE>"
+        "</COSTCENTRE>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    centers = parser.parse_cost_centers(xml)
+    assert len(centers) == 1
+    assert centers[0].name == "Good"
+
+
+def test_parse_voucher_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="bad-guid" VCHTYPE="Sales">'
+        "<ALTERID>not_a_number</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "</VOUCHER>"
+        '<VOUCHER GUID="good-guid" VCHTYPE="Sales">'
+        "<ALTERID>100</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<VOUCHERNUMBER>SI/001</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Cash</LEDGERNAME>"
+        "<AMOUNT>1000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert vouchers[0].guid == "good-guid"
+
+
+def test_parse_bill_element_exception() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<BILL PARTYNAME="Bad Bill"><DATE>20250415</DATE>'
+        "<BILLAMOUNT>5000.00</BILLAMOUNT>"
+        "<OUTSTANDINGAMOUNT>3000.00</OUTSTANDINGAMOUNT>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "</BILL>"
+        '<BILL PARTYNAME="Good Bill"><DATE>20250415</DATE>'
+        "<BILLNUMBER>INV002</BILLNUMBER>"
+        "<BILLAMOUNT>5000.00</BILLAMOUNT>"
+        "<OUTSTANDINGAMOUNT>3000.00</OUTSTANDINGAMOUNT>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "</BILL>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    bills = parser.parse_outstanding_bills(xml)
+    assert len(bills) == 2
+    assert bills[1].party_name == "Good Bill"
+
+
+def test_parse_complex_amount_inner_amount() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="complex-amt-guid" VCHTYPE="Sales">'
+        "<ALTERID>100</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/COMP</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Cash</LEDGERNAME>"
+        "<AMOUNT><AMOUNT>0</AMOUNT><ISDEBIT>True</ISDEBIT></AMOUNT>"
+        "<BILLALLOCATIONS.LIST>"
+        "<BILLTYPE>New Ref</BILLTYPE>"
+        "<NAME>SI/COMP</NAME>"
+        "<AMOUNT><AMOUNT>0</AMOUNT><ISDEBIT>True</ISDEBIT></AMOUNT>"
+        "<BILLCREDITPERIOD>"
+        "<INDAYS>30</INDAYS>"
+        "</BILLCREDITPERIOD>"
+        "</BILLALLOCATIONS.LIST>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-5000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+
+
+def test_parse_voucher_erp9_ledger_entries_fallback() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="erp9-guid" VCHTYPE="Sales">'
+        "<ALTERID>50</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/ERP9</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Debtor A</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>20000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-20000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert len(vouchers[0].ledger_entries) == 2
+
+
+def test_parse_voucher_erp9_inventory_entries_fallback() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="erp9-inv-guid" VCHTYPE="Sales">'
+        "<ALTERID>51</ALTERID>"
+        "<DATE>20250402</DATE>"
+        "<EFFECTIVEDATE>20250402</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/ERP9INV</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Debtor B</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>15000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "<INVENTORYENTRIES.LIST>"
+        "<STOCKITEMNAME>Widget X</STOCKITEMNAME>"
+        "<ACTUALQTY>10 Nos</ACTUALQTY>"
+        "<RATE>1500.00/Nos</RATE>"
+        "<AMOUNT>15000.00</AMOUNT>"
+        "</INVENTORYENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert len(vouchers[0].inventory_entries) == 1
+    assert vouchers[0].inventory_entries[0].stock_item_name == "Widget X"
+
+
+def test_parse_bill_credit_period_text_only() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="bcp-text-guid" VCHTYPE="Sales">'
+        "<ALTERID>201</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/BCP</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Party A</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>10000.00</AMOUNT>"
+        "<BILLALLOCATIONS.LIST>"
+        "<BILLTYPE>New Ref</BILLTYPE>"
+        "<NAME>SI/BCP</NAME>"
+        "<AMOUNT>10000.00</AMOUNT>"
+        "<BILLCREDITPERIOD>45</BILLCREDITPERIOD>"
+        "</BILLALLOCATIONS.LIST>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-10000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert vouchers[0].bill_allocations[0].bill_credit_period == 45
+
+
+def test_parse_bill_credit_period_invalid_text() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="bcp-invalid-guid" VCHTYPE="Sales">'
+        "<ALTERID>202</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/BCPINV</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Party B</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>8000.00</AMOUNT>"
+        "<BILLALLOCATIONS.LIST>"
+        "<BILLTYPE>New Ref</BILLTYPE>"
+        "<NAME>SI/BCPINV</NAME>"
+        "<AMOUNT>8000.00</AMOUNT>"
+        "<BILLCREDITPERIOD>not_a_number</BILLCREDITPERIOD>"
+        "</BILLALLOCATIONS.LIST>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-8000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert vouchers[0].bill_allocations[0].bill_credit_period is None
+
+
+def test_parse_bill_credit_period_no_bill_date_for_diff() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="bcp-nodate-guid" VCHTYPE="Sales">'
+        "<ALTERID>203</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/BCPND</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Party C</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>6000.00</AMOUNT>"
+        "<BILLALLOCATIONS.LIST>"
+        "<BILLTYPE>New Ref</BILLTYPE>"
+        "<NAME>SI/BCPND</NAME>"
+        "<AMOUNT>6000.00</AMOUNT>"
+        "<BILLCREDITPERIOD>"
+        "<DUEONDATE>20250501</DUEONDATE>"
+        "</BILLCREDITPERIOD>"
+        "</BILLALLOCATIONS.LIST>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-6000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert vouchers[0].bill_allocations[0].bill_credit_period is None
+
+
+def test_parse_voucher_complex_amount_is_debit_false() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="complex-debit-guid" VCHTYPE="Sales">'
+        "<ALTERID>210</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/CDB</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Credit Account</LEDGERNAME>"
+        "<AMOUNT><AMOUNT>0</AMOUNT><ISDEBIT>False</ISDEBIT></AMOUNT>"
+        "<COSTCENTRE.LIST>"
+        "<COSTCENTRENAME>Branch A</COSTCENTRENAME>"
+        "<AMOUNT><AMOUNT>0</AMOUNT><ISDEBIT>False</ISDEBIT></AMOUNT>"
+        "</COSTCENTRE.LIST>"
+        "</LEDGERENTRIES.LIST>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Sales</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>-3000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+
+
+def test_parse_voucher_inventory_complex_amount() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        '<VOUCHER GUID="inv-complex-guid" VCHTYPE="Sales">'
+        "<ALTERID>211</ALTERID>"
+        "<DATE>20250401</DATE>"
+        "<EFFECTIVEDATE>20250401</EFFECTIVEDATE>"
+        "<VOUCHERNUMBER>SI/IC</VOUCHERNUMBER>"
+        "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+        "<ISCANCELLED>No</ISCANCELLED>"
+        "<ISOPTIONAL>No</ISOPTIONAL>"
+        "<ISPOSTDATED>No</ISPOSTDATED>"
+        "<ISVOID>No</ISVOID>"
+        "<LEDGERENTRIES.LIST>"
+        "<LEDGERNAME>Party D</LEDGERNAME>"
+        "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+        "<AMOUNT>12000.00</AMOUNT>"
+        "</LEDGERENTRIES.LIST>"
+        "<INVENTORYENTRIES.LIST>"
+        "<STOCKITEMNAME>Widget Y</STOCKITEMNAME>"
+        "<ACTUALQTY>5 Nos</ACTUALQTY>"
+        "<RATE>2400.00/Nos</RATE>"
+        "<AMOUNT><AMOUNT>0</AMOUNT><ISDEBIT>True</ISDEBIT></AMOUNT>"
+        "<GODOWN>Main</GODOWN>"
+        "<BATCH>B001</BATCH>"
+        "</INVENTORYENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    vouchers = parser.parse_vouchers(xml)
+    assert len(vouchers) == 1
+    assert vouchers[0].inventory_entries[0].godown == "Main"
+    assert vouchers[0].inventory_entries[0].batch == "B001"

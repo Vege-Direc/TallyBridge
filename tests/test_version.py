@@ -13,6 +13,7 @@ def test_parse_erp9_string() -> None:
 
 def test_parse_prime_baseline() -> None:
     assert parse_version_string("TallyPrime") == TallyProduct.PRIME_1
+    assert parse_version_string("TallyPrime 1.0") == TallyProduct.PRIME_1
 
 
 def test_parse_prime_with_version() -> None:
@@ -147,3 +148,99 @@ def test_json_api_only_prime7() -> None:
 def test_base64_encoding_only_prime7() -> None:
     assert TallyProduct.PRIME_6.supports_base64_encoding is False
     assert TallyProduct.PRIME_7.supports_base64_encoding is True
+
+
+def test_parse_prime_release_2() -> None:
+    assert parse_version_string("TallyPrime Release 2") == TallyProduct.PRIME_2
+
+
+def test_parse_prime_release_3() -> None:
+    assert parse_version_string("TallyPrime Release 3") == TallyProduct.PRIME_3
+
+
+def test_parse_prime_release_5() -> None:
+    assert parse_version_string("TallyPrime Release 5") == TallyProduct.PRIME_5
+
+
+def test_parse_prime_release_7() -> None:
+    assert parse_version_string("TallyPrime Release 7") == TallyProduct.PRIME_7
+
+
+def test_parse_numeric_2() -> None:
+    assert parse_version_string("2.0") == TallyProduct.PRIME_2
+
+
+def test_parse_numeric_3() -> None:
+    assert parse_version_string("3.0") == TallyProduct.PRIME_3
+
+
+def test_parse_numeric_5() -> None:
+    assert parse_version_string("5.0") == TallyProduct.PRIME_5
+
+
+def test_parse_numeric_6() -> None:
+    assert parse_version_string("6.0") == TallyProduct.PRIME_6
+
+
+def test_parse_numeric_0_falls_to_erp9() -> None:
+    assert parse_version_string("0.5") == TallyProduct.ERP9
+
+
+def test_capabilities_prime1() -> None:
+    caps = TallyProduct.PRIME_1.capabilities()
+    assert caps["is_prime"] is True
+    assert caps["connected_gst"] is False
+    assert caps["connected_banking"] is False
+    assert caps["allledger_entries"] is True
+
+
+def test_capabilities_prime2() -> None:
+    caps = TallyProduct.PRIME_2.capabilities()
+    assert caps["is_prime"] is True
+    assert caps["connected_gst"] is False
+
+
+def test_capabilities_prime3() -> None:
+    caps = TallyProduct.PRIME_3.capabilities()
+    assert caps["is_prime"] is True
+    assert caps["connected_gst"] is False
+
+
+def test_capabilities_prime5() -> None:
+    caps = TallyProduct.PRIME_5.capabilities()
+    assert caps["connected_gst"] is True
+    assert caps["connected_banking"] is False
+
+
+def test_capabilities_prime6() -> None:
+    caps = TallyProduct.PRIME_6.capabilities()
+    assert caps["connected_banking"] is True
+    assert caps["json_api"] is False
+
+
+def test_display_name_fallback_for_unknown() -> None:
+    assert TallyProduct.ERP9.display_name == "Tally.ERP 9"
+    assert TallyProduct.PRIME_1.display_name == "TallyPrime 1.x"
+
+
+async def test_detect_tally_version_no_company_data() -> None:
+    conn = AsyncMock()
+    conn._detected_version = None
+    conn.post_xml.return_value = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
+    result = await detect_tally_version(conn)
+    assert result == TallyProduct.ERP9
+
+
+def test_parse_erp9_variant_patterns() -> None:
+    assert parse_version_string("tally erp") == TallyProduct.ERP9
+    assert parse_version_string("ERP 9") == TallyProduct.ERP9
+
+
+def test_supports_tally_drive() -> None:
+    assert TallyProduct.PRIME_6.supports_tally_drive is False
+    assert TallyProduct.PRIME_7.supports_tally_drive is True
+
+
+def test_supports_connected_banking() -> None:
+    assert TallyProduct.PRIME_5.supports_connected_banking is False
+    assert TallyProduct.PRIME_6.supports_connected_banking is True

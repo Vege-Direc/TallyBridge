@@ -1,6 +1,6 @@
 """Tests for sync — SPECS.md §7."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -9,6 +9,7 @@ from tallybridge.connection import TallyConnection
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 from tallybridge.parser import TallyXMLParser
 from tallybridge.sync import SYNC_ORDER, TallySyncEngine
+from tallybridge.version import TallyProduct
 
 
 @pytest.fixture
@@ -273,3 +274,277 @@ async def test_master_sync_uses_batching_for_large_ranges(
     result = await engine.sync_entity("ledger")
     assert result.success is True
     assert mock_connection.export_collection.call_count >= 2
+
+
+async def test_sync_all_detects_version(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 100
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection._detected_version = None
+    mock_connection.post_xml = AsyncMock(
+        return_value="<ENVELOPE><BODY><DATA><TALLYMESSAGE>"
+        "<COMPANY><VERSION>TallyPrime 4.0</VERSION></COMPANY>"
+        "</TALLYMESSAGE></DATA></BODY></ENVELOPE>"
+    )
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    await engine.sync_all()
+    assert engine._detected_version is not None
+
+
+async def test_sync_all_version_detection_fails_gracefully(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 0
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_connection._detected_version = None
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    with patch(
+        "tallybridge.sync.detect_tally_version",
+        side_effect=RuntimeError("unexpected"),
+    ):
+        await engine.sync_all()
+    assert engine._detected_version == TallyProduct.ERP9
+
+
+async def test_voucher_batched_stops_on_empty(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_cache.get_last_alter_id.return_value = 0
+    mock_connection.get_alter_id_max.return_value = 15000
+    call_count = 0
+
+    async def _return_empty_then_data(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 1:
+            mock_parser.parse_vouchers.return_value = [MagicMock(alter_id=100)]
+            return "<ENVELOPE></ENVELOPE>"
+        mock_parser.parse_vouchers.return_value = []
+        return "<ENVELOPE></ENVELOPE>"
+
+    mock_connection.export_collection.side_effect = _return_empty_then_data
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    result = await engine.sync_entity("voucher")
+    assert result.success is True
+
+
+async def test_master_batched_stops_on_empty(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_cache.get_last_alter_id.return_value = 0
+    mock_connection.get_alter_id_max.return_value = 15000
+    call_count = 0
+
+    async def _return_empty_then_data(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 1:
+            mock_parser.parse_ledgers.return_value = [MagicMock(alter_id=100)]
+            return "<ENVELOPE></ENVELOPE>"
+        mock_parser.parse_ledgers.return_value = []
+        return "<ENVELOPE></ENVELOPE>"
+
+    mock_connection.export_collection.side_effect = _return_empty_then_data
+    engine = TallySyncEngine(
+        mock_connection, mock_cache, mock_parser, voucher_batch_size=100
+    )
+    result = await engine.sync_entity("ledger")
+    assert result.success is True
+
+
+async def test_reconcile_skips_failed_entity(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.side_effect = [
+        TallyConnectionError("fail"),
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+    ]
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    results = await engine.sync_all(reconcile=True)
+    assert len(results) == len(SYNC_ORDER)
+
+
+async def test_reconcile_skips_unknown_table() -> None:
+    mock_conn = AsyncMock(spec=TallyConnection)
+    mock_cache_local = MagicMock(spec=TallyCache)
+    mock_cache_local.get_last_alter_id.return_value = 0
+    mock_cache_local.upsert_ledgers.return_value = 5
+    mock_cache_local.upsert_groups.return_value = 3
+    mock_cache_local.upsert_stock_items.return_value = 3
+    mock_cache_local.upsert_voucher_types.return_value = 4
+    mock_cache_local.upsert_units.return_value = 4
+    mock_cache_local.upsert_stock_groups.return_value = 2
+    mock_cache_local.upsert_cost_centers.return_value = 3
+    mock_cache_local.upsert_vouchers.return_value = (7, 100)
+    mock_conn.get_alter_id_max.return_value = 100
+    mock_conn.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_cache_local.conn.execute.return_value.fetchone.return_value = (5,)
+    parser_local = MagicMock(spec=TallyXMLParser)
+    for name in [
+        "parse_ledgers",
+        "parse_groups",
+        "parse_stock_items",
+        "parse_voucher_types",
+        "parse_units",
+        "parse_stock_groups",
+        "parse_cost_centers",
+        "parse_vouchers",
+    ]:
+        getattr(parser_local, name).return_value = [MagicMock(alter_id=50)]
+    engine = TallySyncEngine(mock_conn, mock_cache_local, parser_local)
+    results = await engine.sync_all(reconcile=True)
+    assert len(results) == len(SYNC_ORDER)
+
+
+async def test_full_sync_drift_detection(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 100
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_cache.detect_content_drift.return_value = [
+        {"guid": "g1", "name": "Test", "content_hash": "abc123"}
+    ]
+    mock_cache.compare_content_drift.return_value = [
+        {
+            "entity_type": "ledger",
+            "guid": "g1",
+            "name": "Test",
+            "old_hash": "abc123",
+            "new_hash": "def456",
+        }
+    ]
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    results = await engine.full_sync()
+    assert len(results) == len(SYNC_ORDER)
+
+
+async def test_full_sync_drift_detection_exception(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 100
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    mock_cache.detect_content_drift.side_effect = Exception("drift failed")
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    results = await engine.full_sync()
+    assert len(results) == len(SYNC_ORDER)
+
+
+async def test_get_active_company_no_company_returns_none(
+    engine: TallySyncEngine, mock_connection
+) -> None:
+    engine._company = None
+    mock_connection.get_company_list.return_value = []
+    result = await engine.get_active_company()
+    assert result is None
+
+
+async def test_get_active_company_exception_returns_none(
+    engine: TallySyncEngine, mock_connection
+) -> None:
+    engine._company = None
+    mock_connection.get_company_list.side_effect = ConnectionError("fail")
+    result = await engine.get_active_company()
+    assert result is None
+
+
+async def test_ensure_company_auto_detects(
+    engine: TallySyncEngine, mock_connection
+) -> None:
+    engine._company = None
+    mock_connection.get_company_list.return_value = ["Auto Detected Co"]
+    result = await engine._ensure_company()
+    assert result == "Auto Detected Co"
+    assert engine._company == "Auto Detected Co"
+
+
+async def test_ensure_company_exception_logs_warning(
+    engine: TallySyncEngine, mock_connection
+) -> None:
+    engine._company = None
+    mock_connection.get_company_list.side_effect = ConnectionError("fail")
+    result = await engine._ensure_company()
+    assert result is None
+
+
+async def test_voucher_batch_size_fallback_on_config_error() -> None:
+    import tallybridge.sync as sync_mod
+
+    original = sync_mod.get_config
+    sync_mod.get_config = lambda: (_ for _ in ()).throw(RuntimeError("no config"))
+    try:
+        engine = TallySyncEngine(
+            AsyncMock(spec=TallyConnection),
+            MagicMock(spec=TallyCache),
+            MagicMock(spec=TallyXMLParser),
+        )
+        assert engine._voucher_batch_size == 5000
+    finally:
+        sync_mod.get_config = original
+
+
+async def test_run_continuous_with_shutdown(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 0
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    engine.request_shutdown()
+    await engine.run_continuous(frequency_minutes=1)
+
+
+async def test_run_continuous_completes_one_cycle(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    sync_count = 0
+
+    async def _sync_once_then_shutdown():
+        nonlocal sync_count
+        sync_count += 1
+        if sync_count >= 1:
+            engine.request_shutdown()
+        return {}
+
+    mock_connection.get_alter_id_max.return_value = 0
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    engine.sync_all = _sync_once_then_shutdown
+    await engine.run_continuous(frequency_minutes=1)
+    assert sync_count >= 1
+
+
+async def test_run_continuous_circuit_breaker_on_error_then_shutdown(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    call_count = 0
+
+    async def _fail_then_shutdown():
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 1:
+            raise TallyConnectionError("connection lost")
+        engine.request_shutdown()
+        return {}
+
+    mock_connection.get_alter_id_max.return_value = 0
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    engine.sync_all = _fail_then_shutdown
+    await engine.run_continuous(frequency_minutes=1)
+    assert call_count >= 2
+
+
+async def test_sync_master_batched_unknown_entity_type(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    count, max_id = await engine._sync_master_batched("nonexistent", 0, 100)
+    assert count == 0
+    assert max_id == 0
