@@ -668,3 +668,62 @@ def test_get_sync_status_after_sync(db: TallyCache) -> None:
     status = db.get_sync_status()
     assert "ledger" in status
     assert status["ledger"]["last_alter_id"] == 100
+
+
+def test_get_cached_guids(db: TallyCache) -> None:
+    from tallybridge.models.master import TallyLedger
+
+    db.upsert_ledgers(
+        [
+            TallyLedger(
+                name="Test1",
+                guid="guid-1",
+                alter_id=1,
+                parent_group="Assets",
+            ),
+            TallyLedger(
+                name="Test2",
+                guid="guid-2",
+                alter_id=2,
+                parent_group="Assets",
+            ),
+        ]
+    )
+    guids = db.get_cached_guids("ledger")
+    assert "guid-1" in guids
+    assert "guid-2" in guids
+
+
+def test_delete_records_by_guid(db: TallyCache) -> None:
+    from tallybridge.models.master import TallyLedger
+
+    db.upsert_ledgers(
+        [
+            TallyLedger(
+                name="Del1",
+                guid="del-1",
+                alter_id=1,
+                parent_group="Assets",
+            ),
+            TallyLedger(
+                name="Del2",
+                guid="del-2",
+                alter_id=2,
+                parent_group="Assets",
+            ),
+        ]
+    )
+    count = db.delete_records_by_guid("ledger", {"del-1"})
+    assert count >= 0
+    guids = db.get_cached_guids("ledger")
+    assert "del-1" not in guids
+
+
+def test_delete_records_empty_guids(db: TallyCache) -> None:
+    count = db.delete_records_by_guid("ledger", set())
+    assert count == 0
+
+
+def test_get_cached_guids_unknown_type(db: TallyCache) -> None:
+    guids = db.get_cached_guids("nonexistent")
+    assert guids == set()

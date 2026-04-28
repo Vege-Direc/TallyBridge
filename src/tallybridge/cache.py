@@ -938,3 +938,93 @@ class TallyCache:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def get_cached_guids(self, entity_type: str) -> set[str]:
+        """Return all GUIDs currently cached for an entity type."""
+        table_map: dict[str, str] = {
+            "ledger": "mst_ledger",
+            "group": "mst_group",
+            "stock_item": "mst_stock_item",
+            "voucher_type": "mst_voucher_type",
+            "unit": "mst_unit",
+            "stock_group": "mst_stock_group",
+            "cost_center": "mst_cost_center",
+            "voucher": "trn_voucher",
+        }
+        table = table_map.get(entity_type)
+        if table is None or self._conn is None:
+            return set()
+        try:
+            rows = self._conn.execute(f"SELECT guid FROM {table}").fetchall()
+            return {str(r[0]) for r in rows if r[0]}
+        except Exception as exc:
+            logger.warning("Failed to get cached GUIDs for {}: {}", entity_type, exc)
+            return set()
+
+    def delete_records_by_guid(
+        self, entity_type: str, guids: set[str]
+    ) -> int:
+        """Delete records by GUID set. Cascades to child tables for vouchers.
+
+        Args:
+            entity_type: The entity type (e.g. "ledger", "voucher").
+            guids: Set of GUIDs to delete.
+
+        Returns:
+            Number of records deleted.
+        """
+        if not guids or self._conn is None:
+            return 0
+        table_map: dict[str, str] = {
+            "ledger": "mst_ledger",
+            "group": "mst_group",
+            "stock_item": "mst_stock_item",
+            "voucher_type": "mst_voucher_type",
+            "unit": "mst_unit",
+            "stock_group": "mst_stock_group",
+            "cost_center": "mst_cost_center",
+            "voucher": "trn_voucher",
+        }
+        table = table_map.get(entity_type)
+        if table is None:
+            return 0
+
+        guid_list = list(guids)
+        placeholders = ",".join(["?"] * len(guid_list))
+        deleted = 0
+        try:
+            if entity_type == "voucher":
+                for guid in guid_list:
+                    self._conn.execute(
+                        "DELETE FROM trn_bill WHERE voucher_guid = ?", [guid]
+                    )
+                    self._conn.execute(
+                        "DELETE FROM trn_cost_centre WHERE voucher_guid = ?",
+                        [guid],
+                    )
+                    self._conn.execute(
+                        "DELETE FROM trn_inventory_entry WHERE voucher_guid = ?",
+                        [guid],
+                    )
+                    self._conn.execute(
+                        "DELETE FROM trn_ledger_entry WHERE voucher_guid = ?",
+                        [guid],
+                    )
+            self._conn.execute(
+                f"DELETE FROM {table} WHERE guid IN ({placeholders})",
+                guid_list,
+            )
+            deleted = len(guids)
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete {} records for {}: {}",
+                len(guids),
+                entity_type,
+                exc,
+            )
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+        return deleted

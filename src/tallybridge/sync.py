@@ -360,7 +360,75 @@ class TallySyncEngine:
                 results[entity_type] = await self.sync_entity(entity_type)
             if reconcile:
                 self._reconcile_counts(results)
-            return results
+        return results
+
+    async def detect_deletions(
+        self, entity_types: list[str] | None = None
+    ) -> dict[str, int]:
+        """Detect and delete records that exist in cache but not in Tally.
+
+        Fetches all GUIDs from Tally for each entity type, compares against
+        the cached GUIDs, and deletes orphans. Returns a dict mapping
+        entity_type to deletion count.
+
+        Args:
+            entity_types: Entity types to check. Defaults to SYNC_ORDER minus
+                "voucher" (vouchers use ISCANCELLED instead).
+        """
+        if entity_types is None:
+            entity_types = [et for et in SYNC_ORDER if et != "voucher"]
+
+        deletion_counts: dict[str, int] = {}
+        company = await self._ensure_company()
+
+        for entity_type in entity_types:
+            config = ENTITY_CONFIG.get(entity_type)
+            if config is None:
+                continue
+
+            try:
+                xml = await self._connection.export_collection(
+                    f"DelCheck_{entity_type}",
+                    config["tally_type"],
+                    ["GUID"],
+                    company=company,
+                )
+                tally_guids = self._extract_guids(xml)
+                cached_guids = self._cache.get_cached_guids(entity_type)
+                deleted_guids = cached_guids - tally_guids
+
+                if deleted_guids:
+                    count = self._cache.delete_records_by_guid(
+                        entity_type, deleted_guids
+                    )
+                    deletion_counts[entity_type] = count
+                    logger.warning(
+                        "Deleted {} orphaned {} records (GUIDs not in Tally)",
+                        count,
+                        entity_type,
+                    )
+                else:
+                    deletion_counts[entity_type] = 0
+            except Exception as exc:
+                logger.warning("Deletion detection failed for {}: {}", entity_type, exc)
+                deletion_counts[entity_type] = 0
+
+        return deletion_counts
+
+    @staticmethod
+    def _extract_guids(xml: str) -> set[str]:
+        """Extract all GUID values from a Tally XML collection response."""
+        import xml.etree.ElementTree as ET
+
+        guids: set[str] = set()
+        try:
+            root = ET.fromstring(xml)
+            for elem in root.iter("GUID"):
+                if elem.text and elem.text.strip():
+                    guids.add(elem.text.strip())
+        except ET.ParseError:
+            pass
+        return guids
 
     def _reconcile_counts(self, results: dict[str, SyncResult]) -> None:
         """Compare cache record counts against Tally counts. Log discrepancies."""
@@ -432,6 +500,15 @@ class TallySyncEngine:
                     )
             except Exception as exc:
                 logger.debug("Drift detection failed for {}: {}", entity_type, exc)
+
+        deletions = await self.detect_deletions(entity_types=master_types)
+        total_deleted = sum(deletions.values())
+        if total_deleted > 0:
+            logger.warning(
+                "Full sync completed with {} total deletions: {}",
+                total_deleted,
+                deletions,
+            )
 
         return results
 

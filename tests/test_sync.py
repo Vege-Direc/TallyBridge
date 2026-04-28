@@ -548,3 +548,48 @@ async def test_sync_master_batched_unknown_entity_type(
     count, max_id = await engine._sync_master_batched("nonexistent", 0, 100)
     assert count == 0
     assert max_id == 0
+
+
+async def test_detect_deletions(mock_connection, mock_cache, mock_parser) -> None:
+    mock_connection.export_collection.return_value = (
+        "<ENVELOPE><BODY><DATA><COLLECTION>"
+        "<LEDGER NAME='A'><GUID>g1</GUID></LEDGER>"
+        "<LEDGER NAME='B'><GUID>g2</GUID></LEDGER>"
+        "</COLLECTION></DATA></BODY></ENVELOPE>"
+    )
+    mock_cache.get_cached_guids.return_value = {"g1", "g2", "g3"}
+    mock_cache.delete_records_by_guid.return_value = 1
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    deletions = await engine.detect_deletions(entity_types=["ledger"])
+    assert deletions["ledger"] == 1
+    mock_cache.delete_records_by_guid.assert_called_once_with("ledger", {"g3"})
+
+
+async def test_detect_deletions_no_orphans(
+    mock_connection, mock_cache, mock_parser
+) -> None:
+    mock_connection.export_collection.return_value = (
+        "<ENVELOPE><BODY><DATA><COLLECTION>"
+        "<LEDGER NAME='A'><GUID>g1</GUID></LEDGER>"
+        "</COLLECTION></DATA></BODY></ENVELOPE>"
+    )
+    mock_cache.get_cached_guids.return_value = {"g1"}
+    engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
+    deletions = await engine.detect_deletions(entity_types=["ledger"])
+    assert deletions["ledger"] == 0
+
+
+def test_extract_guids() -> None:
+    xml = (
+        "<ENVELOPE><BODY><DATA><COLLECTION>"
+        "<LEDGER><GUID>g1</GUID></LEDGER>"
+        "<LEDGER><GUID>g2</GUID></LEDGER>"
+        "</COLLECTION></DATA></BODY></ENVELOPE>"
+    )
+    guids = TallySyncEngine._extract_guids(xml)
+    assert guids == {"g1", "g2"}
+
+
+def test_extract_guids_invalid_xml() -> None:
+    guids = TallySyncEngine._extract_guids("<invalid")
+    assert guids == set()
