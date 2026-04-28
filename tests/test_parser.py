@@ -1010,3 +1010,177 @@ def test_parse_voucher_inventory_complex_amount() -> None:
     assert len(vouchers) == 1
     assert vouchers[0].inventory_entries[0].godown == "Main"
     assert vouchers[0].inventory_entries[0].batch == "B001"
+
+
+# --- Report parsing tests (10d) ---
+
+
+class TestParseBalanceSheet:
+    BALANCE_SHEET_XML = """<ENVELOPE>
+<BSNAME><DSPDISPNAME>Capital Account</DSPDISPNAME></BSNAME>
+<BSCLOSAMT><DSPCLDRAMT><DSPCLDRAMTA></DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA>100000.00</DSPCLCRAMTA></DSPCLCRAMT></BSCLOSAMT>
+<BSNAME><DSPDISPNAME>Current Assets</DSPDISPNAME></BSNAME>
+<BSCLOSAMT><DSPCLDRAMT><DSPCLDRAMTA>50000.00</DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA></DSPCLCRAMTA></DSPCLCRAMT></BSCLOSAMT>
+<BSNAME><DSPDISPNAME>Current Liabilities</DSPDISPNAME></BSNAME>
+<BSCLOSAMT><DSPCLDRAMT><DSPCLDRAMTA></DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA>25000.00</DSPCLCRAMTA></DSPCLCRAMT></BSCLOSAMT>
+</ENVELOPE>"""
+
+    def test_parse_balance_sheet_report(self) -> None:
+        report = TallyXMLParser.parse_report(
+            self.BALANCE_SHEET_XML,
+            report_name="Balance Sheet",
+        )
+        assert report.report_type == "Balance Sheet"
+        assert len(report.lines) == 3
+        assert report.lines[0].name == "Capital Account"
+        assert report.lines[0].closing_credit == Decimal("100000")
+        assert report.lines[1].name == "Current Assets"
+        assert report.lines[1].closing_debit == Decimal("50000")
+        assert report.lines[2].name == "Current Liabilities"
+        assert report.lines[2].closing_credit == Decimal("25000")
+
+    def test_parse_balance_sheet_empty(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="Balance Sheet",
+        )
+        assert report.report_type == "Balance Sheet"
+        assert len(report.lines) == 0
+
+    def test_parse_balance_sheet_with_dates(self) -> None:
+        report = TallyXMLParser.parse_report(
+            self.BALANCE_SHEET_XML,
+            report_name="Balance Sheet",
+            from_date=date(2025, 4, 1),
+            to_date=date(2025, 12, 31),
+        )
+        assert report.from_date == date(2025, 4, 1)
+        assert report.to_date == date(2025, 12, 31)
+
+
+class TestParseProfitLoss:
+    PL_XML = """<ENVELOPE>
+<PLNAME><DSPDISPNAME>Direct Income</DSPDISPNAME></PLNAME>
+<PLCLOSAMT><DSPCLDRAMT><DSPCLDRAMTA></DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA>75000.00</DSPCLCRAMTA></DSPCLCRAMT></PLCLOSAMT>
+<PLNAME><DSPDISPNAME>Indirect Expenses</DSPDISPNAME></PLNAME>
+<PLCLOSAMT><DSPCLDRAMT><DSPCLDRAMTA>30000.00</DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA></DSPCLCRAMTA></DSPCLCRAMT></PLCLOSAMT>
+</ENVELOPE>"""
+
+    def test_parse_profit_loss_report(self) -> None:
+        report = TallyXMLParser.parse_report(
+            self.PL_XML,
+            report_name="Profit & Loss",
+        )
+        assert report.report_type == "Profit & Loss"
+        assert len(report.lines) == 2
+        assert report.lines[0].name == "Direct Income"
+        assert report.lines[0].closing_credit == Decimal("75000")
+        assert report.lines[1].name == "Indirect Expenses"
+        assert report.lines[1].closing_debit == Decimal("30000")
+
+
+class TestParseTrialBalanceReport:
+    TB_XML = """<ENVELOPE>
+<DSPACCNAME><DSPDISPNAME>Cash</DSPDISPNAME></DSPACCNAME>
+<DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA>12000.00</DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA></DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO>
+<DSPACCNAME><DSPDISPNAME>Bank of India</DSPDISPNAME></DSPACCNAME>
+<DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA></DSPCLDRAMTA></DSPCLDRAMT>
+<DSPCLCRAMT><DSPCLCRAMTA>351265.00</DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO>
+</ENVELOPE>"""
+
+    def test_parse_trial_balance_report(self) -> None:
+        report = TallyXMLParser.parse_report(
+            self.TB_XML,
+            report_name="Trial Balance",
+        )
+        assert report.report_type == "Trial Balance"
+        assert len(report.trial_balance) == 2
+        assert report.trial_balance[0].ledger == "Cash"
+        assert report.trial_balance[0].closing_debit == Decimal("12000")
+        assert report.trial_balance[1].ledger == "Bank of India"
+        assert report.trial_balance[1].closing_credit == Decimal("351265")
+
+    def test_trial_balance_empty(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="Trial Balance",
+        )
+        assert report.report_type == "Trial Balance"
+        assert len(report.trial_balance) == 0
+
+
+class TestParseDayBookReport:
+    DAY_BOOK_XML = """<ENVELOPE>
+<BODY><DATA><TALLYMESSAGE>
+<VOUCHER>
+<DATE>20250415</DATE>
+<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+<VOUCHERNUMBER>5</VOUCHERNUMBER>
+<NARRATION>Sold goods</NARRATION>
+<GUID>ABC123</GUID>
+</VOUCHER>
+<VOUCHER>
+<DATE>20250416</DATE>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<VOUCHERNUMBER>2</VOUCHERNUMBER>
+</VOUCHER>
+</TALLYMESSAGE></DATA></BODY>
+</ENVELOPE>"""
+
+    def test_parse_day_book_report(self) -> None:
+        report = TallyXMLParser.parse_report(
+            self.DAY_BOOK_XML,
+            report_name="Day Book",
+        )
+        assert report.report_type == "Day Book"
+        assert len(report.vouchers) == 2
+        assert report.vouchers[0]["voucher_type"] == "Sales"
+        assert report.vouchers[0]["voucher_number"] == "5"
+        assert report.vouchers[0]["narration"] == "Sold goods"
+        assert report.vouchers[0]["guid"] == "ABC123"
+        assert report.vouchers[0]["date"] == date(2025, 4, 15)
+        assert report.vouchers[1]["voucher_type"] == "Purchase"
+
+    def test_day_book_empty(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="Day Book",
+        )
+        assert report.report_type == "Day Book"
+        assert len(report.vouchers) == 0
+
+
+class TestParseReportUnknown:
+    def test_unknown_report_type(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="Custom Report",
+        )
+        assert report.report_type == "Unknown"
+
+    def test_invalid_xml(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<invalid",
+            report_name="Balance Sheet",
+        )
+        assert report.report_type == "Balance Sheet"
+        assert len(report.lines) == 0
+
+    def test_report_type_detection_case_insensitive(self) -> None:
+        report = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="balance sheet",
+        )
+        assert report.report_type == "Balance Sheet"
+
+        report2 = TallyXMLParser.parse_report(
+            "<ENVELOPE></ENVELOPE>",
+            report_name="PROFIT & LOSS",
+        )
+        assert report2.report_type == "Profit & Loss"

@@ -2,8 +2,17 @@
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
+
+TallyReportType = Literal[
+    "Balance Sheet",
+    "Profit & Loss",
+    "Trial Balance",
+    "Day Book",
+    "Unknown",
+]
 
 
 class TrialBalanceLine(BaseModel):
@@ -60,3 +69,22 @@ class SyncResult(BaseModel):
     duration_seconds: float = 0.0
     success: bool = True
     error_message: str | None = None
+
+
+class ReportLine(BaseModel):
+    """One line item in a Balance Sheet or P&L report."""
+
+    name: str
+    closing_debit: Decimal = Decimal("0")
+    closing_credit: Decimal = Decimal("0")
+
+
+class TallyReport(BaseModel):
+    """Parsed result from a Tally TYPE=Data report export."""
+
+    report_type: TallyReportType
+    from_date: date | None = None
+    to_date: date | None = None
+    lines: list[ReportLine] = []
+    trial_balance: list[TrialBalanceLine] = []
+    vouchers: list[dict[str, object]] = []

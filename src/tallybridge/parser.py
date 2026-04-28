@@ -15,7 +15,12 @@ from tallybridge.models.master import (
     TallyUnit,
     TallyVoucherType,
 )
-from tallybridge.models.report import OutstandingBill
+from tallybridge.models.report import (
+    OutstandingBill,
+    ReportLine,
+    TallyReport,
+    TrialBalanceLine,
+)
 from tallybridge.models.voucher import (
     TallyBillAllocation,
     TallyCostCentreAllocation,
@@ -584,3 +589,211 @@ class TallyXMLParser:
         except (InvalidOperation, ValueError, IndexError) as exc:
             logger.warning("Failed to parse rate '{}': {}", rate_str, exc)
             return Decimal("0")
+
+    @staticmethod
+    def parse_report(
+        xml_str: str,
+        report_name: str = "Unknown",
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> TallyReport:
+        """Parse a Tally TYPE=Data report response into a TallyReport.
+
+        Detects the report type from ``report_name`` and delegates to
+        the appropriate specialist parser.  Returns a ``TallyReport``
+        with the structured data.
+
+        Args:
+            xml_str: Raw XML response from Tally.
+            report_name: The report ID that was requested (e.g. "Balance
+                Sheet").
+            from_date: Start date of the report period.
+            to_date: End date of the report period.
+        """
+        from tallybridge.models.report import (
+            TallyReportType,
+        )
+
+        report_type: TallyReportType = "Unknown"
+        if "balance sheet" in report_name.lower():
+            report_type = "Balance Sheet"
+        elif "profit" in report_name.lower():
+            report_type = "Profit & Loss"
+        elif "trial balance" in report_name.lower():
+            report_type = "Trial Balance"
+        elif "day book" in report_name.lower():
+            report_type = "Day Book"
+
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError as exc:
+            logger.warning("Failed to parse report XML: {}", exc)
+            return TallyReport(
+                report_type=report_type,
+                from_date=from_date,
+                to_date=to_date,
+            )
+
+        if report_type == "Trial Balance":
+            tb_lines = TallyXMLParser._parse_trial_balance_report(root)
+            return TallyReport(
+                report_type=report_type,
+                from_date=from_date,
+                to_date=to_date,
+                trial_balance=tb_lines,
+            )
+
+        if report_type == "Day Book":
+            vouchers = TallyXMLParser._parse_day_book_report(root)
+            return TallyReport(
+                report_type=report_type,
+                from_date=from_date,
+                to_date=to_date,
+                vouchers=vouchers,
+            )
+
+        if report_type in ("Balance Sheet", "Profit & Loss"):
+            name_tag = "BSNAME" if report_type == "Balance Sheet" else "PLNAME"
+            amt_tag = "BSCLOSAMT" if report_type == "Balance Sheet" else "PLCLOSAMT"
+            bs_lines = TallyXMLParser._parse_bs_pl_report(root, name_tag, amt_tag)
+            return TallyReport(
+                report_type=report_type,
+                from_date=from_date,
+                to_date=to_date,
+                lines=bs_lines,
+            )
+
+        return TallyReport(
+            report_type=report_type,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+    @staticmethod
+    def _parse_bs_pl_report(
+        root: ET.Element,
+        name_tag: str,
+        amt_tag: str,
+    ) -> list[ReportLine]:
+        """Parse Balance Sheet or P&L report groups.
+
+        Tally returns repeated ``<BSNAME>/<BSCLOSAMT>`` (or
+        ``<PLNAME>/<PLCLOSAMT>``) groups at the ENVELOPE level.  Each
+        name-group contains ``<DSPDISPNAME>`` and each amount-group
+        contains ``<DSPCLDRAMTA>`` / ``<DSPCLCRAMTA>``.
+        """
+        names: list[str] = []
+        debits: list[Decimal] = []
+        credits: list[Decimal] = []
+
+        for elem in root.iter(name_tag):
+            disp = elem.find("DSPDISPNAME")
+            if disp is not None and disp.text:
+                names.append(disp.text.strip())
+            else:
+                names.append("")
+
+        for elem in root.iter(amt_tag):
+            dr = Decimal("0")
+            cr = Decimal("0")
+            dr_elem = elem.find("DSPCLDRAMT/DSPCLDRAMTA")
+            if dr_elem is not None and dr_elem.text and dr_elem.text.strip():
+                dr = TallyXMLParser.parse_amount(dr_elem.text.strip())
+            cr_elem = elem.find("DSPCLCRAMT/DSPCLCRAMTA")
+            if cr_elem is not None and cr_elem.text and cr_elem.text.strip():
+                cr = TallyXMLParser.parse_amount(cr_elem.text.strip())
+            debits.append(dr)
+            credits.append(cr)
+
+        count = min(len(names), len(debits), len(credits))
+        result: list[ReportLine] = []
+        for i in range(count):
+            if names[i]:
+                result.append(
+                    ReportLine(
+                        name=names[i],
+                        closing_debit=debits[i],
+                        closing_credit=credits[i],
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _parse_trial_balance_report(
+        root: ET.Element,
+    ) -> list[TrialBalanceLine]:
+        """Parse Trial Balance report (DSPACCNAME/DSPACCINFO pattern).
+
+        The Tally Trial Balance report returns paired groups of
+        ``<DSPACCNAME>`` and ``<DSPACCINFO>`` elements at the ENVELOPE
+        level.
+        """
+        names: list[str] = []
+        dr_amounts: list[Decimal] = []
+        cr_amounts: list[Decimal] = []
+
+        for elem in root.iter("DSPACCNAME"):
+            disp = elem.find("DSPDISPNAME")
+            if disp is not None and disp.text:
+                names.append(disp.text.strip())
+            else:
+                names.append("")
+
+        for elem in root.iter("DSPACCINFO"):
+            dr = Decimal("0")
+            cr = Decimal("0")
+            dr_elem = elem.find("DSPCLDRAMT/DSPCLDRAMTA")
+            if dr_elem is not None and dr_elem.text and dr_elem.text.strip():
+                dr = TallyXMLParser.parse_amount(dr_elem.text.strip())
+            cr_elem = elem.find("DSPCLCRAMT/DSPCLCRAMTA")
+            if cr_elem is not None and cr_elem.text and cr_elem.text.strip():
+                cr = TallyXMLParser.parse_amount(cr_elem.text.strip())
+            dr_amounts.append(dr)
+            cr_amounts.append(cr)
+
+        count = min(len(names), len(dr_amounts), len(cr_amounts))
+        result: list[TrialBalanceLine] = []
+        for i in range(count):
+            if names[i]:
+                result.append(
+                    TrialBalanceLine(
+                        ledger=names[i],
+                        group="",
+                        closing_debit=dr_amounts[i],
+                        closing_credit=cr_amounts[i],
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _parse_day_book_report(
+        root: ET.Element,
+    ) -> list[dict[str, object]]:
+        """Parse Day Book report into simplified voucher dicts.
+
+        The Day Book response contains ``<TALLYMESSAGE>`` with
+        ``<VOUCHER>`` elements, similar to collection exports.
+        """
+        vouchers: list[dict[str, object]] = []
+        for v_elem in root.iter("VOUCHER"):
+            v: dict[str, object] = {}
+            date_elem = v_elem.find("DATE")
+            if date_elem is not None and date_elem.text:
+                parsed = TallyXMLParser.parse_date(date_elem.text.strip())
+                if parsed is not None:
+                    v["date"] = parsed
+            type_elem = v_elem.find("VOUCHERTYPENAME")
+            if type_elem is not None and type_elem.text:
+                v["voucher_type"] = type_elem.text.strip()
+            num_elem = v_elem.find("VOUCHERNUMBER")
+            if num_elem is not None and num_elem.text:
+                v["voucher_number"] = num_elem.text.strip()
+            narr_elem = v_elem.find("NARRATION")
+            if narr_elem is not None and narr_elem.text:
+                v["narration"] = narr_elem.text.strip()
+            guid_elem = v_elem.find("GUID")
+            if guid_elem is not None and guid_elem.text:
+                v["guid"] = guid_elem.text.strip()
+            if v:
+                vouchers.append(v)
+        return vouchers

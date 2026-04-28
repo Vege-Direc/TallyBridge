@@ -3,7 +3,7 @@
 import base64
 import html
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import httpx
 from loguru import logger
@@ -18,6 +18,7 @@ from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 
 if TYPE_CHECKING:
+    from tallybridge.models.report import TallyReport
     from tallybridge.version import TallyProduct
 
 
@@ -257,7 +258,8 @@ class TallyConnection:
         from_date: str | None = None,
         to_date: str | None = None,
         company: str | None = None,
-    ) -> str:
+        parse: bool = False,
+    ) -> "Union[str, TallyReport]":
         """Fetch a computed Tally report using TYPE=Data.
 
         Supported report names: "Balance Sheet", "Profit & Loss",
@@ -268,16 +270,34 @@ class TallyConnection:
             from_date: Start date in YYYYMMDD format (optional).
             to_date: End date in YYYYMMDD format (optional).
             company: Company name, or None for the active company.
+            parse: If True, parse the XML into a ``TallyReport``.
 
         Returns:
-            Raw XML string of the report data.
+            Raw XML string if ``parse`` is False, else a ``TallyReport``.
 
         Raises:
             TallyConnectionError: Tally not running.
             TallyDataError: Tally returned an error.
         """
         xml = self._build_report_xml(report_name, from_date, to_date, company)
-        return await self.post_xml(xml)
+        raw = await self.post_xml(xml)
+        if not parse:
+            return raw
+
+        from datetime import datetime
+
+        from tallybridge.parser import TallyXMLParser
+
+        parsed_from = (
+            datetime.strptime(from_date, "%Y%m%d").date() if from_date else None
+        )
+        parsed_to = datetime.strptime(to_date, "%Y%m%d").date() if to_date else None
+        return TallyXMLParser.parse_report(
+            raw,
+            report_name=report_name,
+            from_date=parsed_from,
+            to_date=parsed_to,
+        )
 
     @staticmethod
     def encode_name_base64(name: str) -> str:

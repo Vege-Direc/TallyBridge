@@ -3,6 +3,7 @@
 ### Added — Phase 10A: Production Readiness
 
 - **10c**: Improve test coverage from 85% to 93.45% (428 tests). Coverage by module: sdk_server.py 95%, sync.py 97%, parser.py 96%, version.py 90%, query.py 91%, cache.py 91%, connection.py 89%, cli.py 90%
+- **10d**: Add report response parsers: `parse_report()` auto-detects report type, `parse_balance_sheet()` (BSNAME/BSCLOSAMT), `parse_profit_loss()` (PLNAME/PLCLOSAMT), `parse_trial_balance_report()` (DSPACCNAME/DSPACCINFO), `parse_day_book_report()` (VOUCHER). New models: `ReportLine`, `TallyReport`, `TallyReportType`. `fetch_report(parse=True)` returns structured `TallyReport`
 
 ### Added — Phase 9A: Correctness & Security
 

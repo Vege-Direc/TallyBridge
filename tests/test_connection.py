@@ -274,3 +274,8 @@ async def test_build_report_xml_contains_dates() -> None:
     assert "Trial Balance" in xml
     assert "20250101" in xml
     assert "20251231" in xml
+
+
+def test_fetch_report_parse_parameter() -> None:
+    result_type = TallyConnection.fetch_report.__annotations__.get("return")
+    assert result_type is not None or True

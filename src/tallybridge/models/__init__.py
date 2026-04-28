@@ -13,8 +13,10 @@ from tallybridge.models.master import (
 from tallybridge.models.report import (
     DailyDigest,
     OutstandingBill,
+    ReportLine,
     StockAgingLine,
     SyncResult,
+    TallyReport,
     TrialBalanceLine,
 )
 from tallybridge.models.voucher import (
@@ -44,4 +46,6 @@ __all__ = [
     "DailyDigest",
     "StockAgingLine",
     "SyncResult",
+    "ReportLine",
+    "TallyReport",
 ]
