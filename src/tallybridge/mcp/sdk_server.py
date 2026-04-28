@@ -255,6 +255,55 @@ async def get_sync_errors(
     )
 
 
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_balance_sheet(to_date: str | None = None, ctx: _Ctx | None = None) -> Any:
+    """Balance sheet grouped by assets and liabilities."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(app_ctx.query.get_balance_sheet(to_date=_parse_date(to_date)))
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_profit_loss(from_date: str, to_date: str, ctx: _Ctx | None = None) -> Any:
+    """Profit & Loss grouped by income and expense for a period."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_profit_loss(
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_ledger_account(
+    ledger_name: str, from_date: str, to_date: str, ctx: _Ctx | None = None
+) -> Any:
+    """Voucher-level general ledger for a specific ledger and date range."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_ledger_account(
+            ledger_name=ledger_name,
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_stock_item_account(
+    item_name: str, from_date: str, to_date: str, ctx: _Ctx | None = None
+) -> Any:
+    """Quantity movements for a stock item — inward and outward with dates."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_stock_item_account(
+            item_name=item_name,
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
 def main() -> None:
     """Entry point for the tallybridge-mcp console script.
 

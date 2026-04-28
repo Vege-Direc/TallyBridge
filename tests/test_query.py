@@ -404,3 +404,43 @@ def test_fuzzy_search_vouchers_fallback(tally_query: TallyQuery) -> None:
 def test_fuzzy_available_check(tally_query: TallyQuery) -> None:
     result = tally_query._fuzzy_available()
     assert isinstance(result, bool)
+
+
+def test_get_balance_sheet(tally_query: TallyQuery) -> None:
+    result = tally_query.get_balance_sheet(to_date=date(2025, 12, 31))
+    assert isinstance(result, list)
+    for r in result:
+        assert "name" in r
+        assert "section" in r
+        assert "amount" in r
+
+
+def test_get_profit_loss(tally_query: TallyQuery) -> None:
+    result = tally_query.get_profit_loss(
+        from_date=date(2025, 1, 1), to_date=date(2025, 12, 31)
+    )
+    assert isinstance(result, list)
+
+
+def test_get_ledger_account(tally_query: TallyQuery) -> None:
+    result = tally_query.get_ledger_account(
+        ledger_name="Cash",
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+    )
+    assert isinstance(result, list)
+    for r in result:
+        assert "debit" in r
+        assert "credit" in r
+
+
+def test_get_stock_item_account(tally_query: TallyQuery) -> None:
+    result = tally_query.get_stock_item_account(
+        item_name="Test Item",
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+    )
+    assert isinstance(result, list)
+    for r in result:
+        assert "inward_qty" in r
+        assert "outward_qty" in r

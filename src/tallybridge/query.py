@@ -537,3 +537,144 @@ class TallyQuery:
             party_ledger=r.get("party_ledger"),
             total_amount=Decimal(str(r.get("total_amount") or 0)),
         )
+
+    def get_balance_sheet(self, to_date: date | None = None) -> list[dict[str, Any]]:
+        """Balance sheet grouped by assets and liabilities.
+
+        Queries the local cache for ledger closing balances and groups
+        them by their parent group into Assets and Liabilities.
+        """
+        to_date = to_date or date.today()
+        rows = self._cache.query(
+            """SELECT l.name, l.parent_group, l.closing_balance
+            FROM mst_ledger l
+            WHERE l.closing_balance IS NOT NULL
+            ORDER BY l.parent_group, l.name""",
+            [],
+        )
+        result: list[dict[str, Any]] = []
+        for r in rows:
+            balance = Decimal(str(r.get("closing_balance") or 0))
+            parent = str(r.get("parent_group") or "")
+            section = "Liabilities" if balance < 0 else "Assets"
+            result.append(
+                {
+                    "name": r.get("name"),
+                    "group": parent,
+                    "section": section,
+                    "amount": str(abs(balance)),
+                }
+            )
+        return result
+
+    def get_profit_loss(self, from_date: date, to_date: date) -> list[dict[str, Any]]:
+        """Profit & Loss grouped by income and expense.
+
+        Queries voucher entries for the given period and groups
+        by ledger parent into Income and Expense sections.
+        """
+        rows = self._cache.query(
+            """SELECT le.ledger_name, le.amount,
+                      COALESCE(l.parent_group, 'Unknown') as parent_group
+            FROM trn_ledger_entry le
+            JOIN trn_voucher v ON le.voucher_guid = v.guid
+            LEFT JOIN mst_ledger l ON le.ledger_name = l.name
+            WHERE v.date >= ? AND v.date <= ?
+            AND v.is_cancelled = false AND v.is_void = false
+            AND l.parent_group IN (
+                'Direct Income', 'Indirect Incomes',
+                'Direct Expenses', 'Indirect Expenses',
+                'Sales Accounts', 'Purchase Accounts'
+            )
+            ORDER BY l.parent_group, le.ledger_name""",
+            [str(from_date), str(to_date)],
+        )
+        result: list[dict[str, Any]] = []
+        for r in rows:
+            parent = str(r.get("parent_group") or "Unknown")
+            amount = Decimal(str(r.get("amount") or 0))
+            if parent in ("Direct Income", "Indirect Incomes", "Sales Accounts"):
+                section = "Income"
+            else:
+                section = "Expense"
+            result.append(
+                {
+                    "ledger": r.get("ledger_name"),
+                    "group": parent,
+                    "section": section,
+                    "amount": str(abs(amount)),
+                }
+            )
+        return result
+
+    def get_ledger_account(
+        self, ledger_name: str, from_date: date, to_date: date
+    ) -> list[dict[str, Any]]:
+        """Voucher-level general ledger for a specific ledger.
+
+        Returns all ledger entries for the given ledger within the
+        specified date range, with voucher details.
+        """
+        rows = self._cache.query(
+            """SELECT v.date, v.voucher_type, v.voucher_number,
+                      v.narration, le.amount
+            FROM trn_ledger_entry le
+            JOIN trn_voucher v ON le.voucher_guid = v.guid
+            WHERE le.ledger_name = ?
+            AND v.date >= ? AND v.date <= ?
+            AND v.is_cancelled = false
+            ORDER BY v.date, v.voucher_number""",
+            [ledger_name, str(from_date), str(to_date)],
+        )
+        result: list[dict[str, Any]] = []
+        for r in rows:
+            amount = Decimal(str(r.get("amount") or 0))
+            d = r.get("date")
+            result.append(
+                {
+                    "date": str(d) if d else None,
+                    "voucher_type": r.get("voucher_type"),
+                    "voucher_number": r.get("voucher_number"),
+                    "narration": r.get("narration"),
+                    "debit": str(abs(amount)) if amount < 0 else "0",
+                    "credit": str(abs(amount)) if amount >= 0 else "0",
+                }
+            )
+        return result
+
+    def get_stock_item_account(
+        self, item_name: str, from_date: date, to_date: date
+    ) -> list[dict[str, Any]]:
+        """Quantity movements for a stock item within a date range.
+
+        Returns all inventory entries for the item, showing inward
+        and outward quantities with voucher details.
+        """
+        rows = self._cache.query(
+            """SELECT v.date, v.voucher_type, v.voucher_number,
+                      ie.quantity, ie.amount
+            FROM trn_inventory_entry ie
+            JOIN trn_voucher v ON ie.voucher_guid = v.guid
+            WHERE ie.stock_item_name = ?
+            AND v.date >= ? AND v.date <= ?
+            AND v.is_cancelled = false
+            ORDER BY v.date, v.voucher_number""",
+            [item_name, str(from_date), str(to_date)],
+        )
+        result: list[dict[str, Any]] = []
+        for r in rows:
+            qty = Decimal(str(r.get("quantity") or 0))
+            amount = Decimal(str(r.get("amount") or 0))
+            d = r.get("date")
+            is_outward = amount < 0
+            result.append(
+                {
+                    "date": str(d) if d else None,
+                    "voucher_type": r.get("voucher_type"),
+                    "voucher_number": r.get("voucher_number"),
+                    "inward_qty": str(abs(qty)) if not is_outward else "0",
+                    "outward_qty": str(abs(qty)) if is_outward else "0",
+                    "amount": str(abs(amount)),
+                }
+            )
+        return result

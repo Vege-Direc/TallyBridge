@@ -332,6 +332,46 @@ async def test_get_sync_errors_tool(mock_ctx) -> None:
     assert result is not None
 
 
+async def test_get_balance_sheet_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_balance_sheet
+
+    result = await get_balance_sheet(to_date="2025-12-31", ctx=mock_ctx)
+    assert isinstance(result, list)
+
+
+async def test_get_profit_loss_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_profit_loss
+
+    result = await get_profit_loss(
+        from_date="2025-01-01", to_date="2025-12-31", ctx=mock_ctx
+    )
+    assert isinstance(result, list)
+
+
+async def test_get_ledger_account_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_ledger_account
+
+    result = await get_ledger_account(
+        ledger_name="Cash",
+        from_date="2025-01-01",
+        to_date="2025-12-31",
+        ctx=mock_ctx,
+    )
+    assert isinstance(result, list)
+
+
+async def test_get_stock_item_account_tool(mock_ctx) -> None:
+    from tallybridge.mcp.sdk_server import get_stock_item_account
+
+    result = await get_stock_item_account(
+        item_name="Test Item",
+        from_date="2025-01-01",
+        to_date="2025-12-31",
+        ctx=mock_ctx,
+    )
+    assert isinstance(result, list)
+
+
 def test_get_tally_digest(query) -> None:
     result = query.get_daily_digest()
     serialized = _serialize(result)
@@ -448,11 +488,11 @@ def test_query_custom_limit(cache) -> None:
     assert isinstance(result, list)
 
 
-def test_mcp_server_has_13_tools() -> None:
+def test_mcp_server_has_17_tools() -> None:
     from tallybridge.mcp.sdk_server import mcp
 
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 13
+    assert len(tools) == 17
 
 
 def test_mcp_lifespan_creates_context() -> None:
