@@ -323,9 +323,7 @@ async def get_stock_item_account(
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
-async def query_tally_data(
-    sql: str, limit: int = 1000, ctx: _Ctx | None = None
-) -> Any:
+async def query_tally_data(sql: str, limit: int = 1000, ctx: _Ctx | None = None) -> Any:
     """Run a custom SQL SELECT on the local cache. Tables: mst_ledger, mst_group,
     mst_stock_item, mst_unit, mst_stock_group, mst_cost_center, trn_voucher,
     trn_ledger_entry, trn_inventory_entry, trn_cost_centre, trn_bill."""

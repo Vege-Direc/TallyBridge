@@ -301,9 +301,7 @@ async def test_sync_all_version_detection_fails_gracefully(
     mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
     mock_connection._detected_version = None
     engine = TallySyncEngine(mock_connection, mock_cache, mock_parser)
-    mock_connection.detect_version = AsyncMock(
-        side_effect=RuntimeError("unexpected")
-    )
+    mock_connection.detect_version = AsyncMock(side_effect=RuntimeError("unexpected"))
     await engine.sync_all()
     assert engine._detected_version == TallyProduct.ERP9
 
