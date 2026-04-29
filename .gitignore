@@ -99,3 +99,14 @@ AGENTS.md
 
 # Research artifacts
 docs/official-docs-analysis.md
+
+# Phase planning documents
+PLAN-*.md
+
+# Test output artifacts
+test_*.txt
+test_output/
+
+# Temporary dev databases
+tallybridge.duckdb
+tallybridge.duckdb.wal
