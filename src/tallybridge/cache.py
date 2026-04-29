@@ -222,6 +222,95 @@ ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
     ),
 ]
 
+VIEWS_SQL = """
+CREATE OR REPLACE VIEW v_sales_summary AS
+SELECT
+    v.voucher_type,
+    v.date,
+    v.party_ledger,
+    v.total_amount,
+    v.gst_amount,
+    v.voucher_number,
+    v.narration,
+    v.company
+FROM trn_voucher v
+WHERE v.voucher_type IN ('Sales', 'Credit Note')
+  AND v.is_cancelled = false
+  AND v.is_void = false;
+
+CREATE OR REPLACE VIEW v_receivables AS
+SELECT
+    b.party_name,
+    b.bill_date,
+    b.bill_number,
+    b.bill_amount,
+    b.paid_amount,
+    b.outstanding_amount,
+    b.overdue_days,
+    b.voucher_type
+FROM (
+    SELECT
+        v.party_ledger AS party_name,
+        v.date AS bill_date,
+        v.voucher_number AS bill_number,
+        v.total_amount AS bill_amount,
+        CAST(0 AS DECIMAL(18,4)) AS paid_amount,
+        v.total_amount AS outstanding_amount,
+        CASE
+            WHEN v.due_date IS NOT NULL AND v.due_date < CURRENT_DATE
+            THEN CURRENT_DATE - v.due_date
+            ELSE 0
+        END AS overdue_days,
+        v.voucher_type
+    FROM trn_voucher v
+    WHERE v.voucher_type IN ('Sales', 'Credit Note')
+      AND v.is_cancelled = false
+      AND v.is_void = false
+      AND v.total_amount > 0
+) b
+WHERE b.outstanding_amount > 0;
+
+CREATE OR REPLACE VIEW v_gst_summary AS
+SELECT
+    le.ledger_name AS gst_ledger,
+    v.date,
+    SUM(le.amount) AS total_amount,
+    v.company
+FROM trn_ledger_entry le
+JOIN trn_voucher v ON le.voucher_guid = v.guid
+WHERE le.ledger_name LIKE 'CGST%'
+   OR le.ledger_name LIKE 'SGST%'
+   OR le.ledger_name LIKE 'IGST%'
+GROUP BY le.ledger_name, v.date, v.company;
+
+CREATE OR REPLACE VIEW v_stock_summary AS
+SELECT
+    name,
+    parent_group,
+    unit,
+    gst_rate,
+    hsn_code,
+    closing_quantity,
+    closing_value,
+    company
+FROM mst_stock_item;
+
+CREATE OR REPLACE VIEW v_party_position AS
+SELECT
+    l.name AS party_name,
+    l.parent_group,
+    l.closing_balance,
+    l.gstin,
+    l.company,
+    CASE
+        WHEN l.parent_group = 'Sundry Debtors' THEN 'Receivable'
+        WHEN l.parent_group = 'Sundry Creditors' THEN 'Payable'
+        ELSE 'Other'
+    END AS position_type
+FROM mst_ledger l
+WHERE l.parent_group IN ('Sundry Debtors', 'Sundry Creditors');
+"""
+
 
 def _compute_content_hash(*values: Any) -> str:
     """Compute SHA-256 hash from field values for drift detection."""
@@ -254,6 +343,7 @@ class TallyCache:
                     "INSERT INTO schema_version (version, description) VALUES (?, ?)",
                     [version, description],
                 )
+        self.conn.execute(VIEWS_SQL)
 
     def upsert_ledgers(self, ledgers: list[TallyLedger]) -> int:
         """INSERT OR REPLACE ledgers by guid. Returns affected row count."""
@@ -913,7 +1003,8 @@ class TallyCache:
                 columns = [desc[0] for desc in result.description]
                 rows = [
                     dict(zip(columns, row, strict=False)) for row in result.fetchall()
-                ]
+]
+
                 return rows
             finally:
                 read_conn.close()

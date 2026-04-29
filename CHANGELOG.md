@@ -6,6 +6,16 @@
 - **11f**: Add `import_masters_json()` and `import_vouchers_json()` for TallyPrime 7.0+ JSON import. Add `_build_import_json()` with `detailed-response` header and `svmstimportformat`/`svvchimportformat` static variables. Add `_parse_import_response_json()` for JSON import response parsing
 - **11g**: Add convenience methods: `build_ledger_xml()`, `build_voucher_xml()`, `build_cancel_voucher_xml()`, `build_ledger_json()`, `build_voucher_json()`, `build_cancel_voucher_json()`. Each builds the data payload for import operations
 
+### Added — Phase 9E: TallyPrime 7.0 Low-Hanging Fruit
+
+- **9ac**: Add `_fix_currency_entities()` to `TallyXMLParser` — replaces AED (`&#8387;` → U+20C3) and SAR (`&#8385;` → U+20C1) entity codes that may not decode correctly in ElementTree. Handles TallyPrime 7.0 currency symbol changes
+- **9ai**: `SVExportInPlainFormat` already set to `Yes` in `_build_report_json()` for cleaner JSON report output without TDL metadata wrappers
+- **9ag**: Add TSS expiry status detection to `tallybridge doctor` command — queries Tally version and reports whether TallyPrime 7.0+ features are available
+
+### Added — Phase 11C: BI Integration
+
+- **11h**: Add 5 pre-built SQL views for BI tools: `v_sales_summary`, `v_receivables`, `v_gst_summary`, `v_stock_summary`, `v_party_position`. Views are created automatically during `TallyCache.initialize()`. Compatible with Power BI, Metabase, Superset via DuckDB ODBC/native drivers
+
 ### Added — Phase 11A: JSON API Support (TallyPrime 7.0+)
 
 - **11a**: Add `tally_export_format` config field (`auto`, `xml`, `json`) — when `auto`, uses JSONEx on TallyPrime 7.0+, XML otherwise. Add `post_json()` method to `TallyConnection` with same retry/error handling as `post_xml()`. Add `_build_collection_json()`, `_build_object_json()`, `_build_report_json()` builder methods producing HTTP headers + JSON body per TallyPrime 7.0 spec. Add `_require_capability()` and `_get_export_format()` helpers. Add `id-encoded` header for non-ASCII names in JSON object requests. Modify `export_collection()`, `export_object()`, `fetch_report()` for auto-format selection

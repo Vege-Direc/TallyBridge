@@ -11,6 +11,7 @@ from tallybridge.models.master import (
     TallyCostCenter,
     TallyLedger,
     TallyStockGroup,
+    TallyStockItem,
     TallyUnit,
     TallyVoucherType,
 )
@@ -727,3 +728,87 @@ def test_delete_records_empty_guids(db: TallyCache) -> None:
 def test_get_cached_guids_unknown_type(db: TallyCache) -> None:
     guids = db.get_cached_guids("nonexistent")
     assert guids == set()
+
+
+# ── BI Views Tests (Phase 11C) ──────────────────────────────────────────
+
+
+def test_bi_views_created_on_initialize(db: TallyCache) -> None:
+    views = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'main' AND table_type = 'VIEW' "
+        "ORDER BY table_name"
+    )
+    view_names = {v["table_name"] for v in views}
+    assert "v_sales_summary" in view_names
+    assert "v_receivables" in view_names
+    assert "v_gst_summary" in view_names
+    assert "v_stock_summary" in view_names
+    assert "v_party_position" in view_names
+
+
+def test_v_sales_summary_view(db: TallyCache) -> None:
+    db.upsert_vouchers([
+        TallyVoucher(
+            guid="guid-v-sales-001",
+            alter_id=1,
+            voucher_number="S-001",
+            voucher_type="Sales",
+            date=date(2025, 1, 15),
+            total_amount=Decimal("10000"),
+            ledger_entries=[],
+        ),
+    ])
+    result = db.query("SELECT * FROM v_sales_summary")
+    assert len(result) == 1
+    assert result[0]["voucher_type"] == "Sales"
+    assert result[0]["total_amount"] == Decimal("10000")
+
+
+def test_v_stock_summary_view(db: TallyCache) -> None:
+    db.upsert_stock_items([
+        TallyStockItem(
+            name="Widget A",
+            guid="guid-stock-bi-001",
+            alter_id=1,
+            parent_group="Finished Goods",
+            unit="Nos",
+            closing_quantity=Decimal("100"),
+            closing_value=Decimal("5000"),
+        ),
+    ])
+    result = db.query("SELECT * FROM v_stock_summary WHERE name = 'Widget A'")
+    assert len(result) == 1
+    assert result[0]["closing_quantity"] == Decimal("100")
+
+
+def test_v_party_position_view(db: TallyCache) -> None:
+    db.upsert_ledgers([
+        TallyLedger(
+            name="Debtor A",
+            guid="guid-party-bi-001",
+            alter_id=1,
+            parent_group="Sundry Debtors",
+            closing_balance=Decimal("5000"),
+        ),
+    ])
+    result = db.query("SELECT * FROM v_party_position WHERE party_name = 'Debtor A'")
+    assert len(result) == 1
+    assert result[0]["position_type"] == "Receivable"
+
+
+def test_v_receivables_view(db: TallyCache) -> None:
+    db.upsert_vouchers([
+        TallyVoucher(
+            guid="guid-recv-bi-001",
+            alter_id=1,
+            voucher_number="S-002",
+            voucher_type="Sales",
+            date=date(2025, 1, 10),
+            party_ledger="Customer X",
+            total_amount=Decimal("8000"),
+            ledger_entries=[],
+        ),
+    ])
+    result = db.query("SELECT * FROM v_receivables WHERE party_name = 'Customer X'")
+    assert len(result) >= 1
