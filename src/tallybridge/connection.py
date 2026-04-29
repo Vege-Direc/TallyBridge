@@ -19,7 +19,7 @@ from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 
 if TYPE_CHECKING:
-    from tallybridge.models.report import TallyReport
+    from tallybridge.models.report import ImportResult, TallyReport
     from tallybridge.version import TallyProduct
 
 
@@ -523,6 +523,546 @@ class TallyConnection:
             )
 
         return dict(data)
+
+    async def import_masters(
+        self,
+        xml_data: str,
+        company: str | None = None,
+        action: str = "Create",
+    ) -> "ImportResult":
+        """Import master data (ledgers, groups, stock items, etc.) into TallyPrime.
+
+        Sends an XML import request via ``TALLYREQUEST=Import Data``.
+        Requires ``TALLYBRIDGE_ALLOW_WRITES=true`` in the environment.
+
+        Args:
+            xml_data: Tally-formatted XML containing one or more master objects
+                (e.g. ``<LEDGER>`` elements).
+            company: Target company name. If ``None``, uses the active company.
+            action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
+                Defaults to ``"Create"``.
+
+        Returns:
+            An ``ImportResult`` with created/altered/deleted/error counts.
+
+        Raises:
+            TallyConnectionError: If ``allow_writes`` is ``False`` or Tally is
+                unreachable.
+            TallyDataError: If Tally rejects the import.
+        """
+        self._check_writes_allowed()
+
+        envelope = (
+            "<ENVELOPE>"
+            "<HEADER><VERSION>1</VERSION>"
+            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "</HEADER>"
+            "<BODY><IMPORTDATA>"
+            "<REQUESTDESC><REPORTNAME>All Masters</REPORTNAME></REQUESTDESC>"
+            f"<REQUESTDATA><TALLYMESSAGE>"
+            f"{xml_data}"
+            f"</TALLYMESSAGE></REQUESTDATA>"
+            "</IMPORTDATA></BODY></ENVELOPE>"
+        )
+
+        response = await self.post_xml(envelope)
+        return self._parse_import_response_xml(response)
+
+    async def import_vouchers(
+        self,
+        xml_data: str,
+        company: str | None = None,
+        action: str = "Create",
+    ) -> "ImportResult":
+        """Import voucher data (sales, purchases, receipts, etc.) into TallyPrime.
+
+        Sends an XML import request via ``TALLYREQUEST=Import Data``.
+        Requires ``TALLYBRIDGE_ALLOW_WRITES=true`` in the environment.
+
+        Args:
+            xml_data: Tally-formatted XML containing one or more ``<VOUCHER>``
+                elements.
+            company: Target company name. If ``None``, uses the active company.
+            action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
+                Defaults to ``"Create"``.
+
+        Returns:
+            An ``ImportResult`` with created/altered/deleted/error counts.
+        """
+        self._check_writes_allowed()
+
+        envelope = (
+            "<ENVELOPE>"
+            "<HEADER><VERSION>1</VERSION>"
+            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "</HEADER>"
+            "<BODY><IMPORTDATA>"
+            "<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>"
+            f"<REQUESTDATA><TALLYMESSAGE>"
+            f"{xml_data}"
+            f"</TALLYMESSAGE></REQUESTDATA>"
+            "</IMPORTDATA></BODY></ENVELOPE>"
+        )
+
+        response = await self.post_xml(envelope)
+        return self._parse_import_response_xml(response)
+
+    async def import_masters_json(
+        self,
+        tally_message: dict[str, Any],
+        company: str | None = None,
+        detailed_response: bool = True,
+    ) -> "ImportResult":
+        """Import master data using JSON/JSONEx format (TallyPrime 7.0+).
+
+        Args:
+            tally_message: The ``tallymessage`` dict containing master object
+                data in Tally's native JSON structure.
+            company: Target company name.
+            detailed_response: If ``True``, include the ``detailed-response``
+                header for object creation/alteration counts.
+
+        Returns:
+            An ``ImportResult`` with created/altered/deleted/error counts.
+        """
+        self._check_writes_allowed()
+        self._require_capability("json_api")
+
+        headers, body = self._build_import_json(
+            import_id="All Masters",
+            tally_message=tally_message,
+            company=company,
+            import_format="JSONEx",
+            detailed_response=detailed_response,
+        )
+        raw = await self.post_json(headers, body)
+        return self._parse_import_response_json(raw)
+
+    async def import_vouchers_json(
+        self,
+        tally_message: dict[str, Any],
+        company: str | None = None,
+        detailed_response: bool = True,
+    ) -> "ImportResult":
+        """Import voucher data using JSON/JSONEx format (TallyPrime 7.0+).
+
+        Args:
+            tally_message: The ``tallymessage`` dict containing voucher object
+                data in Tally's native JSON structure.
+            company: Target company name.
+            detailed_response: If ``True``, include the ``detailed-response``
+                header for object creation/alteration counts.
+
+        Returns:
+            An ``ImportResult`` with created/altered/deleted/error counts.
+        """
+        self._check_writes_allowed()
+        self._require_capability("json_api")
+
+        headers, body = self._build_import_json(
+            import_id="Vouchers",
+            tally_message=tally_message,
+            company=company,
+            import_format="JSONEx",
+            detailed_response=detailed_response,
+        )
+        raw = await self.post_json(headers, body)
+        return self._parse_import_response_json(raw)
+
+    def _check_writes_allowed(self) -> None:
+        """Raise TallyConnectionError if writes are not enabled."""
+        if not self._config.allow_writes:
+            raise TallyConnectionError(
+                "Import operations require TALLYBRIDGE_ALLOW_WRITES=true. "
+                "Set this environment variable to enable write-back to TallyPrime."
+            )
+
+    @staticmethod
+    def _build_import_xml(
+        report_name: str,
+        xml_data: str,
+        company: str | None = None,
+    ) -> str:
+        """Build XML envelope for a TallyPrime import request."""
+        safe_company = html.escape(company, quote=True) if company else ""
+        static_vars = ""
+        if safe_company:
+            static_vars = (
+                f"<SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>"
+            )
+        return (
+            "<ENVELOPE>"
+            "<HEADER><VERSION>1</VERSION>"
+            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "</HEADER>"
+            "<BODY><IMPORTDATA>"
+            f"<REQUESTDESC><REPORTNAME>{html.escape(report_name, quote=True)}"
+            f"</REPORTNAME></REQUESTDESC>"
+            f"<REQUESTDATA><TALLYMESSAGE>"
+            f"{xml_data}"
+            f"</TALLYMESSAGE></REQUESTDATA>"
+            f"{static_vars}"
+            "</IMPORTDATA></BODY></ENVELOPE>"
+        )
+
+    @staticmethod
+    def _build_import_json(
+        import_id: str,
+        tally_message: dict[str, Any],
+        company: str | None = None,
+        import_format: str = "JSONEx",
+        detailed_response: bool = True,
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        """Build HTTP headers and JSON body for a TallyPrime 7.0+ import.
+
+        Returns (headers_dict, body_dict) suitable for post_json().
+        """
+        headers: dict[str, str] = {
+            "tallyrequest": "Import",
+            "type": "Data",
+            "id": import_id,
+        }
+        if detailed_response:
+            headers["detailed-response"] = "Yes"
+
+        sv_format_key = (
+            "svmstimportformat"
+            if import_id == "All Masters"
+            else "svvchimportformat"
+        )
+        static_variables: dict[str, str] = {
+            sv_format_key: import_format,
+        }
+        if company:
+            static_variables["svcurrentcompany"] = company
+
+        body: dict[str, Any] = {
+            "static_variables": static_variables,
+            "tallymessage": tally_message,
+        }
+
+        return headers, body
+
+    @staticmethod
+    def _parse_import_response_xml(response: str) -> "ImportResult":
+        """Parse an XML import response into an ImportResult."""
+        from tallybridge.models.report import ImportResult
+
+        created = 0
+        altered = 0
+        deleted = 0
+        errors = 0
+        error_messages: list[str] = []
+
+        created_match = re.search(
+            r"<CREATED>(\d+)</CREATED>", response, re.IGNORECASE
+        )
+        altered_match = re.search(
+            r"<ALTERED>(\d+)</ALTERED>", response, re.IGNORECASE
+        )
+        deleted_match = re.search(
+            r"<DELETED>(\d+)</DELETED>", response, re.IGNORECASE
+        )
+        errors_match = re.search(
+            r"<ERRORS>(\d+)</ERRORS>", response, re.IGNORECASE
+        )
+
+        if created_match:
+            created = int(created_match.group(1))
+        if altered_match:
+            altered = int(altered_match.group(1))
+        if deleted_match:
+            deleted = int(deleted_match.group(1))
+        if errors_match:
+            errors = int(errors_match.group(1))
+
+        line_error_matches = re.findall(
+            r"<LINEERROR>([^<]+)</LINEERROR>", response, re.IGNORECASE
+        )
+        error_messages.extend(line_error_matches)
+
+        status_match = re.search(r"<STATUS>(-?\d+)</STATUS>", response)
+        success = True
+        if status_match:
+            status_val = int(status_match.group(1))
+            success = status_val >= 0
+
+        if not success and not error_messages:
+            status_val_str = (
+                status_match.group(1) if status_match else "unknown"
+            )
+            error_messages.append(
+                f"Import failed with STATUS={status_val_str}"
+            )
+
+        return ImportResult(
+            success=success and errors == 0,
+            created=created,
+            altered=altered,
+            deleted=deleted,
+            errors=errors,
+            error_messages=error_messages,
+            raw_response=response,
+        )
+
+    @staticmethod
+    def _parse_import_response_json(data: dict[str, Any]) -> "ImportResult":
+        """Parse a JSON import response into an ImportResult."""
+        from tallybridge.models.report import ImportResult
+
+        created = 0
+        altered = 0
+        deleted = 0
+        errors = 0
+        error_messages: list[str] = []
+
+        cmp_info = data.get("cmp_info", {})
+        if isinstance(cmp_info, dict):
+            created = int(cmp_info.get("created", 0) or 0)
+            altered = int(cmp_info.get("altered", 0) or 0)
+            deleted = int(cmp_info.get("deleted", 0) or 0)
+            errors = int(cmp_info.get("errors", 0) or 0)
+
+        status_val = data.get("status")
+        success = True
+        if status_val is not None:
+            status_int = int(status_val) if isinstance(status_val, str) else status_val
+            success = status_int >= 0
+
+        tally_msg = data.get("tallymessage", [])
+        if isinstance(tally_msg, list):
+            for item in tally_msg:
+                if isinstance(item, dict):
+                    err = item.get("lineerror") or item.get("error")
+                    if err:
+                        error_messages.append(str(err))
+
+        if not success and not error_messages:
+            error_messages.append(f"Import failed with status={status_val}")
+
+        return ImportResult(
+            success=success and errors == 0,
+            created=created,
+            altered=altered,
+            deleted=deleted,
+            errors=errors,
+            error_messages=error_messages,
+            raw_response=json.dumps(data),
+        )
+
+    @staticmethod
+    def build_ledger_xml(
+        name: str,
+        parent_group: str = "Sundry Debtors",
+        opening_balance: str = "0",
+        action: str = "Create",
+    ) -> str:
+        """Build a ``<LEDGER>`` XML fragment for import.
+
+        Args:
+            name: Ledger name.
+            parent_group: Parent group name (e.g. ``"Sundry Debtors"``).
+            opening_balance: Opening balance string (e.g. ``"5000"``).
+            action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
+
+        Returns:
+            XML string fragment suitable for ``import_masters()``.
+        """
+        safe_name = html.escape(name, quote=True)
+        safe_parent = html.escape(parent_group, quote=True)
+        safe_action = html.escape(action, quote=True)
+        safe_balance = html.escape(opening_balance, quote=True)
+        return (
+            f'<LEDGER NAME="{safe_name}" ACTION="{safe_action}">'
+            f"<NAME.LIST><NAME>{safe_name}</NAME></NAME.LIST>"
+            f"<PARENT>{safe_parent}</PARENT>"
+            f"<OPENINGBALANCE>{safe_balance}</OPENINGBALANCE>"
+            f"</LEDGER>"
+        )
+
+    @staticmethod
+    def build_voucher_xml(
+        voucher_type: str,
+        date: str,
+        ledger_entries: list[dict[str, str]],
+        narration: str | None = None,
+        voucher_number: str | None = None,
+        party_ledger: str | None = None,
+        action: str = "Create",
+    ) -> str:
+        """Build a ``<VOUCHER>`` XML fragment for import.
+
+        Args:
+            voucher_type: Voucher type name (e.g. ``"Sales"``, ``"Payment"``).
+            date: Date in YYYYMMDD format.
+            ledger_entries: List of dicts with keys ``"ledger_name"`` and
+                ``"amount"`` (positive=Dr, negative=Cr).
+            narration: Optional narration text.
+            voucher_number: Optional voucher number.
+            party_ledger: Optional party ledger name.
+            action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
+
+        Returns:
+            XML string fragment suitable for ``import_vouchers()``.
+        """
+        safe_type = html.escape(voucher_type, quote=True)
+        safe_action = html.escape(action, quote=True)
+        safe_date = html.escape(date, quote=True)
+
+        entries_xml = ""
+        for entry in ledger_entries:
+            safe_ledger = html.escape(entry.get("ledger_name", ""), quote=True)
+            safe_amount = html.escape(entry.get("amount", "0"), quote=True)
+            entries_xml += (
+                "<ALLLEDGERENTRIES.LIST>"
+                f"<LEDGERNAME>{safe_ledger}</LEDGERNAME>"
+                f"<AMOUNT>{safe_amount}</AMOUNT>"
+                "</ALLLEDGERENTRIES.LIST>"
+            )
+
+        narration_xml = ""
+        if narration:
+            escaped = html.escape(narration, quote=True)
+            narration_xml = f"<NARRATION>{escaped}</NARRATION>"
+
+        vch_num_xml = ""
+        if voucher_number:
+            escaped = html.escape(voucher_number, quote=True)
+            vch_num_xml = f"<VOUCHERNUMBER>{escaped}</VOUCHERNUMBER>"
+
+        party_xml = ""
+        if party_ledger:
+            escaped = html.escape(party_ledger, quote=True)
+            party_xml = f"<PARTYLEDGERNAME>{escaped}</PARTYLEDGERNAME>"
+
+        return (
+            f'<VOUCHER VCHTYPE="{safe_type}" ACTION="{safe_action}">'
+            f"<DATE>{safe_date}</DATE>"
+            f"{vch_num_xml}"
+            f"{party_xml}"
+            f"{narration_xml}"
+            f"{entries_xml}"
+            f"</VOUCHER>"
+        )
+
+    @staticmethod
+    def build_cancel_voucher_xml(
+        guid: str,
+        voucher_type: str = "Sales",
+    ) -> str:
+        """Build a ``<VOUCHER>`` XML fragment to cancel a voucher by GUID.
+
+        Args:
+            guid: The GUID of the voucher to cancel.
+            voucher_type: Voucher type name.
+
+        Returns:
+            XML string fragment suitable for ``import_vouchers()``.
+        """
+        safe_guid = html.escape(guid, quote=True)
+        safe_type = html.escape(voucher_type, quote=True)
+        return (
+            f'<VOUCHER VCHTYPE="{safe_type}" ACTION="Alter">'
+            f"<GUID>{safe_guid}</GUID>"
+            f"<ISCANCELLED>Yes</ISCANCELLED>"
+            f"</VOUCHER>"
+        )
+
+    @staticmethod
+    def build_ledger_json(
+        name: str,
+        parent_group: str = "Sundry Debtors",
+        opening_balance: str = "0",
+        action: str = "Create",
+    ) -> dict[str, Any]:
+        """Build a ledger JSON object for import via ``import_masters_json()``.
+
+        Args:
+            name: Ledger name.
+            parent_group: Parent group name.
+            opening_balance: Opening balance string.
+            action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
+
+        Returns:
+            A ``tallymessage`` dict suitable for ``import_masters_json()``.
+        """
+        return {
+            "ledger": {
+                "name": name,
+                "action": action,
+                "parent": parent_group,
+                "openingbalance": opening_balance,
+            }
+        }
+
+    @staticmethod
+    def build_voucher_json(
+        voucher_type: str,
+        date: str,
+        ledger_entries: list[dict[str, str]],
+        narration: str | None = None,
+        voucher_number: str | None = None,
+        party_ledger: str | None = None,
+        action: str = "Create",
+    ) -> dict[str, Any]:
+        """Build a voucher JSON object for import via ``import_vouchers_json()``.
+
+        Args:
+            voucher_type: Voucher type name.
+            date: Date in YYYYMMDD format.
+            ledger_entries: List of dicts with ``"ledger_name"`` and ``"amount"``.
+            narration: Optional narration.
+            voucher_number: Optional voucher number.
+            party_ledger: Optional party ledger name.
+            action: Import action.
+
+        Returns:
+            A ``tallymessage`` dict suitable for ``import_vouchers_json()``.
+        """
+        entries = []
+        for entry in ledger_entries:
+            entries.append({
+                "ledgername": entry.get("ledger_name", ""),
+                "amount": entry.get("amount", "0"),
+            })
+
+        voucher: dict[str, Any] = {
+            "vouchertype": voucher_type,
+            "action": action,
+            "date": date,
+            "allledgerentrieslist": entries,
+        }
+        if narration:
+            voucher["narration"] = narration
+        if voucher_number:
+            voucher["vouchernumber"] = voucher_number
+        if party_ledger:
+            voucher["partyledgername"] = party_ledger
+
+        return {"voucher": voucher}
+
+    @staticmethod
+    def build_cancel_voucher_json(
+        guid: str,
+        voucher_type: str = "Sales",
+    ) -> dict[str, Any]:
+        """Build a voucher JSON to cancel a voucher by GUID.
+
+        Args:
+            guid: The GUID of the voucher to cancel.
+            voucher_type: Voucher type name.
+
+        Returns:
+            A ``tallymessage`` dict suitable for ``import_vouchers_json()``.
+        """
+        return {
+            "voucher": {
+                "vouchertype": voucher_type,
+                "action": "Alter",
+                "guid": guid,
+                "iscancelled": "Yes",
+            }
+        }
 
     async def close(self) -> None:
         await self._client.aclose()

@@ -25,6 +25,7 @@ class TallyBridgeConfig(BaseSettings):
     supabase_url: str | None = None
     supabase_key: str | None = None
     mcp_api_key: str | None = None
+    allow_writes: bool = False
 
     model_config = SettingsConfigDict(
         env_prefix="TALLYBRIDGE_",

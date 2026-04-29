@@ -88,3 +88,15 @@ class TallyReport(BaseModel):
     lines: list[ReportLine] = []
     trial_balance: list[TrialBalanceLine] = []
     vouchers: list[dict[str, object]] = []
+
+
+class ImportResult(BaseModel):
+    """Result of an import operation (masters or vouchers) into TallyPrime."""
+
+    success: bool = True
+    created: int = 0
+    altered: int = 0
+    deleted: int = 0
+    errors: int = 0
+    error_messages: list[str] = []
+    raw_response: str = ""

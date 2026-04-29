@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+### Added — Phase 11B: Import/Write-Back Capability
+
+- **11e**: Add `import_masters()` and `import_vouchers()` XML import methods to `TallyConnection`. Requires `TALLYBRIDGE_ALLOW_WRITES=true` env var. Add `ImportResult` model with created/altered/deleted/errors counts. Add `_parse_import_response_xml()` and `_check_writes_allowed()` helpers. Add `allow_writes: bool = False` config field
+- **11f**: Add `import_masters_json()` and `import_vouchers_json()` for TallyPrime 7.0+ JSON import. Add `_build_import_json()` with `detailed-response` header and `svmstimportformat`/`svvchimportformat` static variables. Add `_parse_import_response_json()` for JSON import response parsing
+- **11g**: Add convenience methods: `build_ledger_xml()`, `build_voucher_xml()`, `build_cancel_voucher_xml()`, `build_ledger_json()`, `build_voucher_json()`, `build_cancel_voucher_json()`. Each builds the data payload for import operations
+
 ### Added — Phase 11A: JSON API Support (TallyPrime 7.0+)
 
 - **11a**: Add `tally_export_format` config field (`auto`, `xml`, `json`) — when `auto`, uses JSONEx on TallyPrime 7.0+, XML otherwise. Add `post_json()` method to `TallyConnection` with same retry/error handling as `post_xml()`. Add `_build_collection_json()`, `_build_object_json()`, `_build_report_json()` builder methods producing HTTP headers + JSON body per TallyPrime 7.0 spec. Add `_require_capability()` and `_get_export_format()` helpers. Add `id-encoded` header for non-ASCII names in JSON object requests. Modify `export_collection()`, `export_object()`, `fetch_report()` for auto-format selection

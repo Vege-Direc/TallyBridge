@@ -838,6 +838,34 @@ def setup_mock_routes(httpserver) -> None:
             resp_xml = build_cost_center_xml()
         elif ">Voucher<" in xml_body:
             resp_xml = build_voucher_xml()
+        elif "Import Data" in xml_body:
+            if ">All Masters<" in xml_body or "<LEDGER" in xml_body:
+                resp_xml = (
+                    "<ENVELOPE><HEADER><VERSION>1</VERSION>"
+                    "<STATUS>1</STATUS></HEADER>"
+                    "<BODY><DATA><IMPORTRESULT>"
+                    "<CREATED>1</CREATED><ALTERED>0</ALTERED>"
+                    "<DELETED>0</DELETED><ERRORS>0</ERRORS>"
+                    "</IMPORTRESULT></DATA></BODY></ENVELOPE>"
+                )
+            elif ">Vouchers<" in xml_body or "<VOUCHER" in xml_body:
+                resp_xml = (
+                    "<ENVELOPE><HEADER><VERSION>1</VERSION>"
+                    "<STATUS>1</STATUS></HEADER>"
+                    "<BODY><DATA><IMPORTRESULT>"
+                    "<CREATED>1</CREATED><ALTERED>0</ALTERED>"
+                    "<DELETED>0</DELETED><ERRORS>0</ERRORS>"
+                    "</IMPORTRESULT></DATA></BODY></ENVELOPE>"
+                )
+            else:
+                resp_xml = (
+                    "<ENVELOPE><HEADER><VERSION>1</VERSION>"
+                    "<STATUS>1</STATUS></HEADER>"
+                    "<BODY><DATA><IMPORTRESULT>"
+                    "<CREATED>0</CREATED><ALTERED>0</ALTERED>"
+                    "<DELETED>0</DELETED><ERRORS>0</ERRORS>"
+                    "</IMPORTRESULT></DATA></BODY></ENVELOPE>"
+                )
         else:
             resp_xml = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
 
@@ -931,7 +959,19 @@ def setup_mock_routes(httpserver) -> None:
             else:
                 resp = {"status": "1", "data": {"tallymessage": {}}}
         elif tally_type == "data":
-            resp = {"status": "1", "data": {}}
+            tally_request = request.headers.get("tallyrequest", "").lower()
+            if tally_request == "import":
+                resp = {
+                    "status": "1",
+                    "cmp_info": {
+                        "created": 1,
+                        "altered": 0,
+                        "deleted": 0,
+                        "errors": 0,
+                    },
+                }
+            else:
+                resp = {"status": "1", "data": {}}
         else:
             resp = {"status": "1", "data": {}}
 

@@ -601,3 +601,283 @@ async def test_fetch_report_json(
     )
     assert isinstance(result, dict)
     await json_conn.close()
+
+
+# ── Import Tests (Phase 11B) ───────────────────────────────────────────
+
+
+@pytest.fixture
+def write_conn(mock_server: HTTPServer):
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+        allow_writes=True,
+    )
+    connection = TallyConnection(config)
+    yield connection
+
+
+@pytest.fixture
+def write_json_conn(mock_server: HTTPServer):
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+        tally_export_format="json",
+        allow_writes=True,
+    )
+    connection = TallyConnection(config)
+    connection._detected_version = TallyProduct.PRIME_7
+    yield connection
+
+
+async def test_import_masters_blocked_without_writes(
+    conn: TallyConnection,
+) -> None:
+    xml = TallyConnection.build_ledger_xml("Test Ledger", "Sundry Debtors")
+    with pytest.raises(TallyConnectionError, match="TALLYBRIDGE_ALLOW_WRITES"):
+        await conn.import_masters(xml)
+    await conn.close()
+
+
+async def test_import_vouchers_blocked_without_writes(
+    conn: TallyConnection,
+) -> None:
+    xml = TallyConnection.build_voucher_xml(
+        "Sales", "20250101", [{"ledger_name": "Cash", "amount": "1000"}]
+    )
+    with pytest.raises(TallyConnectionError, match="TALLYBRIDGE_ALLOW_WRITES"):
+        await conn.import_vouchers(xml)
+    await conn.close()
+
+
+async def test_import_masters_xml(write_conn: TallyConnection) -> None:
+    xml = TallyConnection.build_ledger_xml("Test Ledger", "Sundry Debtors", "5000")
+    result = await write_conn.import_masters(xml)
+    assert result.success is True
+    assert result.created >= 1
+    assert result.errors == 0
+    await write_conn.close()
+
+
+async def test_import_vouchers_xml(write_conn: TallyConnection) -> None:
+    xml = TallyConnection.build_voucher_xml(
+        "Sales",
+        "20250101",
+        [
+            {"ledger_name": "Sales", "amount": "-1000"},
+            {"ledger_name": "Cash", "amount": "1000"},
+        ],
+        narration="Test voucher",
+        voucher_number="V-001",
+    )
+    result = await write_conn.import_vouchers(xml)
+    assert result.success is True
+    assert result.created >= 1
+    assert result.errors == 0
+    await write_conn.close()
+
+
+async def test_import_masters_json(
+    write_json_conn: TallyConnection,
+) -> None:
+    msg = TallyConnection.build_ledger_json(
+        "Test Ledger", "Sundry Debtors", "5000"
+    )
+    result = await write_json_conn.import_masters_json(msg)
+    assert result.success is True
+    assert result.created >= 1
+    await write_json_conn.close()
+
+
+async def test_import_vouchers_json(
+    write_json_conn: TallyConnection,
+) -> None:
+    msg = TallyConnection.build_voucher_json(
+        "Sales",
+        "20250101",
+        [
+            {"ledger_name": "Sales", "amount": "-1000"},
+            {"ledger_name": "Cash", "amount": "1000"},
+        ],
+        narration="Test JSON voucher",
+    )
+    result = await write_json_conn.import_vouchers_json(msg)
+    assert result.success is True
+    assert result.created >= 1
+    await write_json_conn.close()
+
+
+async def test_import_json_blocked_without_json_api(
+    write_conn: TallyConnection,
+) -> None:
+    write_conn._detected_version = TallyProduct.PRIME_1
+    msg = TallyConnection.build_ledger_json("Test", "Sundry Debtors")
+    with pytest.raises(TallyConnectionError, match="json_api"):
+        await write_conn.import_masters_json(msg)
+    await write_conn.close()
+
+
+async def test_build_ledger_xml() -> None:
+    xml = TallyConnection.build_ledger_xml(
+        "New Ledger", "Bank Accounts", "10000", action="Create"
+    )
+    assert 'NAME="New Ledger"' in xml
+    assert "<PARENT>Bank Accounts</PARENT>" in xml
+    assert "<OPENINGBALANCE>10000</OPENINGBALANCE>" in xml
+    assert 'ACTION="Create"' in xml
+
+
+async def test_build_voucher_xml() -> None:
+    xml = TallyConnection.build_voucher_xml(
+        "Payment",
+        "20250315",
+        [{"ledger_name": "Cash", "amount": "500"}],
+        narration="Payment test",
+        voucher_number="P-001",
+    )
+    assert 'VCHTYPE="Payment"' in xml
+    assert "<DATE>20250315</DATE>" in xml
+    assert "<LEDGERNAME>Cash</LEDGERNAME>" in xml
+    assert "<AMOUNT>500</AMOUNT>" in xml
+    assert "<NARRATION>Payment test</NARRATION>" in xml
+    assert "<VOUCHERNUMBER>P-001</VOUCHERNUMBER>" in xml
+
+
+async def test_build_cancel_voucher_xml() -> None:
+    xml = TallyConnection.build_cancel_voucher_xml("guid-abc-123", "Sales")
+    assert "<GUID>guid-abc-123</GUID>" in xml
+    assert "<ISCANCELLED>Yes</ISCANCELLED>" in xml
+    assert 'ACTION="Alter"' in xml
+
+
+async def test_build_ledger_json() -> None:
+    msg = TallyConnection.build_ledger_json(
+        "New Ledger", "Bank Accounts", "10000", action="Create"
+    )
+    assert "ledger" in msg
+    assert msg["ledger"]["name"] == "New Ledger"
+    assert msg["ledger"]["parent"] == "Bank Accounts"
+    assert msg["ledger"]["openingbalance"] == "10000"
+    assert msg["ledger"]["action"] == "Create"
+
+
+async def test_build_voucher_json() -> None:
+    msg = TallyConnection.build_voucher_json(
+        "Payment",
+        "20250315",
+        [{"ledger_name": "Cash", "amount": "500"}],
+        narration="Payment test",
+    )
+    assert "voucher" in msg
+    assert msg["voucher"]["vouchertype"] == "Payment"
+    assert msg["voucher"]["date"] == "20250315"
+    assert len(msg["voucher"]["allledgerentrieslist"]) == 1
+    assert msg["voucher"]["narration"] == "Payment test"
+
+
+async def test_build_cancel_voucher_json() -> None:
+    msg = TallyConnection.build_cancel_voucher_json("guid-abc-123", "Sales")
+    assert msg["voucher"]["guid"] == "guid-abc-123"
+    assert msg["voucher"]["iscancelled"] == "Yes"
+    assert msg["voucher"]["action"] == "Alter"
+
+
+async def test_parse_import_response_xml_success() -> None:
+    response = (
+        "<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER>"
+        "<BODY><DATA><IMPORTRESULT>"
+        "<CREATED>3</CREATED><ALTERED>1</ALTERED>"
+        "<DELETED>0</DELETED><ERRORS>0</ERRORS>"
+        "</IMPORTRESULT></DATA></BODY></ENVELOPE>"
+    )
+    result = TallyConnection._parse_import_response_xml(response)
+    assert result.success is True
+    assert result.created == 3
+    assert result.altered == 1
+    assert result.deleted == 0
+    assert result.errors == 0
+
+
+async def test_parse_import_response_xml_with_errors() -> None:
+    response = (
+        "<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>-1</STATUS></HEADER>"
+        "<BODY><DATA><IMPORTRESULT>"
+        "<CREATED>0</CREATED><ALTERED>0</ALTERED>"
+        "<DELETED>0</DELETED><ERRORS>2</ERRORS>"
+        "</IMPORTRESULT>"
+        "<LINEERROR>Duplicate ledger</LINEERROR>"
+        "</DATA></BODY></ENVELOPE>"
+    )
+    result = TallyConnection._parse_import_response_xml(response)
+    assert result.success is False
+    assert result.errors == 2
+    assert len(result.error_messages) >= 1
+
+
+async def test_parse_import_response_json_success() -> None:
+    data = {
+        "status": "1",
+        "cmp_info": {
+            "created": 2,
+            "altered": 1,
+            "deleted": 0,
+            "errors": 0,
+        },
+    }
+    result = TallyConnection._parse_import_response_json(data)
+    assert result.success is True
+    assert result.created == 2
+    assert result.altered == 1
+    assert result.errors == 0
+
+
+async def test_parse_import_response_json_with_errors() -> None:
+    data = {
+        "status": "-1",
+        "cmp_info": {
+            "created": 0,
+            "altered": 0,
+            "deleted": 0,
+            "errors": 1,
+        },
+        "tallymessage": [{"lineerror": "Missing parent group"}],
+    }
+    result = TallyConnection._parse_import_response_json(data)
+    assert result.success is False
+    assert result.errors == 1
+    assert "Missing parent group" in result.error_messages
+
+
+async def test_build_import_json_masters() -> None:
+    headers, body = TallyConnection._build_import_json(
+        import_id="All Masters",
+        tally_message={"ledger": {"name": "Test"}},
+        company="Test Co",
+    )
+    assert headers["tallyrequest"] == "Import"
+    assert headers["type"] == "Data"
+    assert headers["id"] == "All Masters"
+    assert headers["detailed-response"] == "Yes"
+    assert body["static_variables"]["svmstimportformat"] == "JSONEx"
+    assert body["static_variables"]["svcurrentcompany"] == "Test Co"
+    assert body["tallymessage"] == {"ledger": {"name": "Test"}}
+
+
+async def test_build_import_json_vouchers() -> None:
+    headers, body = TallyConnection._build_import_json(
+        import_id="Vouchers",
+        tally_message={"voucher": {}},
+    )
+    assert headers["id"] == "Vouchers"
+    assert body["static_variables"]["svvchimportformat"] == "JSONEx"
+
+
+async def test_allow_writes_config_default() -> None:
+    config = TallyBridgeConfig()
+    assert config.allow_writes is False
+
+
+async def test_allow_writes_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TALLYBRIDGE_ALLOW_WRITES", "true")
+    config = TallyBridgeConfig()
+    assert config.allow_writes is True

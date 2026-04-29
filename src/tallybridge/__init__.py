@@ -19,6 +19,7 @@ from tallybridge.models.master import (
 )
 from tallybridge.models.report import (
     DailyDigest,
+    ImportResult,
     OutstandingBill,
     StockAgingLine,
     SyncResult,
@@ -95,6 +96,7 @@ __all__ = [
     "TallyCache",
     "TallySyncEngine",
     "SyncResult",
+    "ImportResult",
     "TallyQuery",
     "TallyXMLParser",
     "TallyJSONParser",

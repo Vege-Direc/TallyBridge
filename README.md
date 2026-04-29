@@ -124,6 +124,7 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
 | `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
 | `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error (Tally semantics) |
+| `TALLYBRIDGE_ALLOW_WRITES` | `false` | Enable import/write-back to TallyPrime (requires explicit opt-in) |
 | `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport auth |
 | `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
 
