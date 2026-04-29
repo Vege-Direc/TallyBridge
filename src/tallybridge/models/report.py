@@ -11,6 +11,7 @@ TallyReportType = Literal[
     "Profit & Loss",
     "Trial Balance",
     "Day Book",
+    "GSTR-3B",
     "Unknown",
 ]
 
@@ -99,4 +100,26 @@ class ImportResult(BaseModel):
     deleted: int = 0
     errors: int = 0
     error_messages: list[str] = []
+    raw_response: str = ""
+
+
+class GSTR3BSection(BaseModel):
+    """One section of the GSTR-3B return."""
+
+    section: str
+    description: str = ""
+    taxable_value: Decimal = Decimal("0")
+    integrated_tax: Decimal = Decimal("0")
+    central_tax: Decimal = Decimal("0")
+    state_tax: Decimal = Decimal("0")
+    cess: Decimal = Decimal("0")
+
+
+class GSTR3BResult(BaseModel):
+    """Parsed GSTR-3B return data from TallyPrime."""
+
+    from_date: date | None = None
+    to_date: date | None = None
+    gstin: str = ""
+    sections: list[GSTR3BSection] = []
     raw_response: str = ""

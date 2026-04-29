@@ -1,11 +1,16 @@
 """Tally XML/JSON parser — see SPECS.md §5."""
 
+from __future__ import annotations
+
 import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from tallybridge.models.report import GSTR3BSection
 
 from tallybridge.models.master import (
     TallyCostCenter,
@@ -817,6 +822,63 @@ class TallyXMLParser:
                 vouchers.append(v)
         return vouchers
 
+    @staticmethod
+    def parse_gstr3b(xml_str: str) -> list["GSTR3BSection"]:
+        """Parse a GSTR-3B XML report response into structured sections.
+
+        TallyPrime returns GSTR-3B data using DSPDISPNAME/DSPACCINFO
+        groups similar to other reports. We extract section names and
+        tax amounts (IGST, CGST, SGST, Cess).
+        """
+        from tallybridge.models.report import GSTR3BSection
+
+        sections: list[GSTR3BSection] = []
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            return sections
+
+        current_section = ""
+        for elem in root.iter():
+            tag = elem.tag.upper()
+            if tag == "DSPDISPNAME" and elem.text:
+                name = elem.text.strip()
+                if name and not name.startswith("-"):
+                    current_section = name
+            elif tag == "DSPACCINFO" and current_section:
+                taxable = Decimal("0")
+                igst = Decimal("0")
+                cgst = Decimal("0")
+                sgst = Decimal("0")
+                cess = Decimal("0")
+                for sub in elem.iter():
+                    stag = sub.tag.upper()
+                    if "TAXABLE" in stag and sub.text:
+                        taxable = TallyXMLParser.parse_amount(sub.text)
+                    elif "IGST" in stag and sub.text:
+                        igst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CGST" in stag and sub.text:
+                        cgst = TallyXMLParser.parse_amount(sub.text)
+                    elif "SGST" in stag or "SCTAX" in stag:
+                        if sub.text:
+                            sgst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CESS" in stag and sub.text:
+                        cess = TallyXMLParser.parse_amount(sub.text)
+                if taxable or igst or cgst or sgst or cess:
+                    sections.append(
+                        GSTR3BSection(
+                            section=current_section,
+                            description=current_section,
+                            taxable_value=taxable,
+                            integrated_tax=igst,
+                            central_tax=cgst,
+                            state_tax=sgst,
+                            cess=cess,
+                        )
+                    )
+                    current_section = ""
+        return sections
+
 
 class TallyJSONParser:
     """Parse TallyPrime 7.0+ JSONEx responses into the same Pydantic models.
@@ -1424,3 +1486,50 @@ class TallyJSONParser:
             if v:
                 vouchers.append(v)
         return vouchers
+
+    @staticmethod
+    def parse_gstr3b_json(data: dict[str, Any]) -> list["GSTR3BSection"]:
+        """Parse a GSTR-3B JSON response into structured sections."""
+        from tallybridge.models.report import GSTR3BSection
+
+        sections: list[GSTR3BSection] = []
+        messages = TallyJSONParser._get_tally_messages(data)
+        for msg in messages:
+            for _key, obj in msg.items():
+                if not isinstance(obj, dict):
+                    continue
+                section_name = (
+                    TallyJSONParser._get_val(obj, "dspdispname")
+                    or TallyJSONParser._get_val(obj, "name")
+                    or ""
+                )
+                if not section_name:
+                    continue
+                taxable = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "taxablevalue", "0")
+                )
+                igst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "integratedtax", "0")
+                )
+                cgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "centraltax", "0")
+                )
+                sgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "statetax", "0")
+                )
+                cess = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "cess", "0")
+                )
+                if taxable or igst or cgst or sgst or cess:
+                    sections.append(
+                        GSTR3BSection(
+                            section=section_name,
+                            description=section_name,
+                            taxable_value=taxable,
+                            integrated_tax=igst,
+                            central_tax=cgst,
+                            state_tax=sgst,
+                            cess=cess,
+                        )
+                    )
+        return sections

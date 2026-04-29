@@ -19,7 +19,7 @@ from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 
 if TYPE_CHECKING:
-    from tallybridge.models.report import ImportResult, TallyReport
+    from tallybridge.models.report import GSTR3BResult, ImportResult, TallyReport
     from tallybridge.version import TallyProduct
 
 
@@ -390,6 +390,66 @@ class TallyConnection:
             report_name=report_name,
             from_date=parsed_from,
             to_date=parsed_to,
+        )
+
+    async def fetch_gstr3b(
+        self,
+        from_date: str,
+        to_date: str,
+        company: str | None = None,
+    ) -> "GSTR3BResult":
+        """Fetch GSTR-3B return data from TallyPrime.
+
+        Uses the TYPE=Data report pattern with report name ``GSTR 3B``.
+        Requires TallyPrime with GST features (4.0+ for Connected GST).
+        The response contains GST return sections matching the portal format.
+
+        Args:
+            from_date: Start date in ``YYYYMMDD`` format.
+            to_date: End date in ``YYYYMMDD`` format.
+            company: Company name (uses detected company if None).
+
+        Returns:
+            GSTR3BResult with parsed sections or raw response on parse failure.
+        """
+        from tallybridge.models.report import GSTR3BResult
+
+        raw = await self.fetch_report(
+            "GSTR 3B",
+            from_date=from_date,
+            to_date=to_date,
+            company=company,
+        )
+
+        raw_str: str = ""
+        if isinstance(raw, dict):
+            import json
+
+            raw_str = json.dumps(raw)
+        elif isinstance(raw, str):
+            raw_str = raw
+
+        from datetime import datetime
+
+        parsed_from = datetime.strptime(from_date, "%Y%m%d").date()
+        parsed_to = datetime.strptime(to_date, "%Y%m%d").date()
+
+        if isinstance(raw, dict):
+            from tallybridge.parser import TallyJSONParser
+
+            sections = TallyJSONParser.parse_gstr3b_json(raw)
+        elif isinstance(raw, str):
+            from tallybridge.parser import TallyXMLParser as _XMLParser
+
+            sections = _XMLParser.parse_gstr3b(raw)
+        else:
+            sections = []
+
+        return GSTR3BResult(
+            from_date=parsed_from,
+            to_date=parsed_to,
+            sections=sections,
+            raw_response=raw_str,
         )
 
     @staticmethod

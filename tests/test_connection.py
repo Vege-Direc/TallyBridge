@@ -881,3 +881,17 @@ async def test_allow_writes_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TALLYBRIDGE_ALLOW_WRITES", "true")
     config = TallyBridgeConfig()
     assert config.allow_writes is True
+
+
+async def test_fetch_gstr3b(conn: TallyConnection) -> None:
+    result = await conn.fetch_gstr3b("20250101", "20250331")
+    assert result.from_date is not None
+    assert result.to_date is not None
+    assert isinstance(result.sections, list)
+
+
+async def test_fetch_gstr3b_json(json_conn: TallyConnection) -> None:
+    result = await json_conn.fetch_gstr3b("20250101", "20250331")
+    assert result.from_date is not None
+    assert isinstance(result.sections, list)
+    assert result.raw_response != ""

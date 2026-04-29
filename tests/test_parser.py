@@ -1529,3 +1529,65 @@ class TestCurrencyEntityCodes:
         fixed = TallyXMLParser._fix_currency_entities(xml)
         assert "\u20c3" in fixed
         assert "\u20c1" in fixed
+
+
+class TestGSTR3BParser:
+    def test_parse_gstr3b_xml_empty(self) -> None:
+        result = TallyXMLParser.parse_gstr3b("")
+        assert result == []
+
+    def test_parse_gstr3b_xml_invalid(self) -> None:
+        result = TallyXMLParser.parse_gstr3b("not xml")
+        assert result == []
+
+    def test_parse_gstr3b_xml_with_sections(self) -> None:
+        xml = """<ENVELOPE>
+        <DSPDISPNAME>3.1(a) Outward taxable supplies</DSPDISPNAME>
+        <DSPACCINFO>
+            <TAXABLEVALUE>100000</TAXABLEVALUE>
+            <IGSTAMT>18000</IGSTAMT>
+            <CGSTAMT>9000</CGSTAMT>
+            <SGSTAMT>9000</SGSTAMT>
+            <CESSAMT>0</CESSAMT>
+        </DSPACCINFO>
+        <DSPDISPNAME>3.1(d) Inward supplies</DSPDISPNAME>
+        <DSPACCINFO>
+            <TAXABLEVALUE>50000</TAXABLEVALUE>
+            <IGSTAMT>9000</IGSTAMT>
+            <CGSTAMT>0</CGSTAMT>
+            <SGSTAMT>0</SGSTAMT>
+            <CESSAMT>500</CESSAMT>
+        </DSPACCINFO>
+        </ENVELOPE>"""
+        result = TallyXMLParser.parse_gstr3b(xml)
+        assert len(result) >= 1
+        assert result[0].section == "3.1(a) Outward taxable supplies"
+        assert result[0].taxable_value == Decimal("100000")
+        assert result[0].integrated_tax == Decimal("18000")
+
+    def test_parse_gstr3b_json_with_sections(self) -> None:
+        data = {
+            "data": {
+                "tallymessage": [
+                    {
+                        "gstr3b": {
+                            "dspdispname": "3.1(a) Outward taxable supplies",
+                            "taxablevalue": "200000",
+                            "integratedtax": "36000",
+                            "centraltax": "18000",
+                            "statetax": "18000",
+                            "cess": "0",
+                        }
+                    }
+                ]
+            }
+        }
+        result = TallyJSONParser.parse_gstr3b_json(data)
+        assert len(result) == 1
+        assert result[0].section == "3.1(a) Outward taxable supplies"
+        assert result[0].taxable_value == Decimal("200000")
+        assert result[0].integrated_tax == Decimal("36000")
+
+    def test_parse_gstr3b_json_empty(self) -> None:
+        result = TallyJSONParser.parse_gstr3b_json({"data": {"tallymessage": []}})
+        assert result == []

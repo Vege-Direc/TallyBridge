@@ -12,6 +12,8 @@ from tallybridge.models.master import (
 )
 from tallybridge.models.report import (
     DailyDigest,
+    GSTR3BResult,
+    GSTR3BSection,
     ImportResult,
     OutstandingBill,
     ReportLine,
@@ -50,4 +52,6 @@ __all__ = [
     "ImportResult",
     "ReportLine",
     "TallyReport",
+    "GSTR3BResult",
+    "GSTR3BSection",
 ]
