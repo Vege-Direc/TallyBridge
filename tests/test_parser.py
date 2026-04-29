@@ -1504,3 +1504,28 @@ class TestJSONParserHelperMethods:
         assert (
             TallyJSONParser._parse_bill_credit_period_json("abc") is None
         )
+
+
+class TestCurrencyEntityCodes:
+    def test_fix_currency_entities_aed(self) -> None:
+        xml = "<NAME>Price &#8387; 100</NAME>"
+        fixed = TallyXMLParser._fix_currency_entities(xml)
+        assert "\u20c3" in fixed
+        assert "&#8387;" not in fixed
+
+    def test_fix_currency_entities_sar(self) -> None:
+        xml = "<NAME>Amount &#8385; 500</NAME>"
+        fixed = TallyXMLParser._fix_currency_entities(xml)
+        assert "\u20c1" in fixed
+        assert "&#8385;" not in fixed
+
+    def test_fix_currency_entities_no_change(self) -> None:
+        xml = "<NAME>Cash</NAME>"
+        fixed = TallyXMLParser._fix_currency_entities(xml)
+        assert fixed == xml
+
+    def test_fix_currency_entities_both(self) -> None:
+        xml = "<A>&#8387;</A><B>&#8385;</B>"
+        fixed = TallyXMLParser._fix_currency_entities(xml)
+        assert "\u20c3" in fixed
+        assert "\u20c1" in fixed

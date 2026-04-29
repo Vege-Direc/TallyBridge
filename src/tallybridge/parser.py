@@ -32,6 +32,24 @@ from tallybridge.models.voucher import (
 
 
 class TallyXMLParser:
+    CURRENCY_ENTITY_FIXES: dict[str, str] = {
+        "&#8387;": "\u20c3",
+        "&#8385;": "\u20c1",
+    }
+
+    @staticmethod
+    def _fix_currency_entities(xml: str) -> str:
+        """Replace known TallyPrime 7.0 currency entity codes in XML.
+
+        TallyPrime 7.0 introduced AED (U+20C3) and SAR (U+20C1) currency
+        symbols. Their XML entity codes (&#8387; and &#8385;) may not
+        decode correctly in all XML parsers. Pre-replace them to ensure
+        correct handling.
+        """
+        for entity, replacement in TallyXMLParser.CURRENCY_ENTITY_FIXES.items():
+            xml = xml.replace(entity, replacement)
+        return xml
+
     @staticmethod
     def parse_amount(amount_str: str | None) -> Decimal:
         """Parse Tally amount string to signed Decimal.

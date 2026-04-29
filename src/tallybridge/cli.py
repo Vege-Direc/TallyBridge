@@ -284,6 +284,31 @@ def doctor() -> None:
     else:
         checks.append(("(Windows service — N/A on this OS)", True))
 
+    # 8. TSS status (if Tally is reachable)
+    tss_ok = None
+    if reachable:
+        try:
+            from tallybridge.connection import TallyConnection
+
+            tconn = TallyConnection(cfg)
+            product = asyncio.run(tconn.detect_version())
+            caps = product.capabilities()
+            tss_ok = caps.get("tally_drive", False) or caps.get("json_api", False)
+            asyncio.run(tconn.close())
+        except Exception:
+            tss_ok = None
+    if tss_ok is True:
+        checks.append(("TSS subscription active (TallyPrime 7.0+ features)", True))
+    elif tss_ok is False:
+        checks.append(
+            (
+                "TSS may be expired — TallyPrime 7.0+ features unavailable",
+                False,
+            )
+        )
+    else:
+        checks.append(("TSS status: could not determine", True))
+
     for label, ok in checks:
         icon = "✓" if ok else "✗"
         console.print(f"  {icon} {label}")
