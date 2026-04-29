@@ -336,7 +336,7 @@ class TallySyncEngine:
         return total_count, max_committed_alter_id
 
     async def sync_all(self, reconcile: bool = False) -> dict[str, SyncResult]:
-        """Sync all entities in SYNC_ORDER. Holds _lock for the full cycle.
+        """Sync all entities. Masters are synced concurrently, then vouchers.
 
         On first sync, detects the Tally product version for compatibility.
         When reconcile=True, compares cache record counts against Tally counts
@@ -353,9 +353,17 @@ class TallySyncEngine:
                 except Exception:
                     self._detected_version = TallyProduct.ERP9
                     logger.warning("Version detection failed; assuming Tally.ERP 9")
+
+            master_types = [et for et in SYNC_ORDER if et != "voucher"]
             results: dict[str, SyncResult] = {}
-            for entity_type in SYNC_ORDER:
-                results[entity_type] = await self.sync_entity(entity_type)
+
+            master_coros = [self.sync_entity(et) for et in master_types]
+            master_results = await asyncio.gather(*master_coros)
+            for entity_type, result in zip(master_types, master_results, strict=True):
+                results[entity_type] = result
+
+            results["voucher"] = await self.sync_entity("voucher")
+
             if reconcile:
                 self._reconcile_counts(results)
         return results

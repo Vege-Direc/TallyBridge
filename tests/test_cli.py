@@ -196,3 +196,49 @@ def test_doctor_non_windows() -> None:
         result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "N/A" in result.output
+
+
+def test_doctor_tss_expired_shows_renewal_prompt() -> None:
+    from tallybridge.version import TallyProduct
+
+    mock_product = TallyProduct.PRIME_4
+    with patch(
+        "tallybridge.cli._ping_tally",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
+        with patch(
+            "tallybridge.connection.TallyConnection.detect_version",
+            new_callable=AsyncMock,
+            return_value=mock_product,
+        ):
+            with patch(
+                "tallybridge.connection.TallyConnection.close",
+                new_callable=AsyncMock,
+            ):
+                result = runner.invoke(app, ["doctor"])
+                assert result.exit_code == 0
+                assert "tallysolutions.com" in result.output
+
+
+def test_doctor_tss_active_no_renewal_prompt() -> None:
+    from tallybridge.version import TallyProduct
+
+    mock_product = TallyProduct.PRIME_7
+    with patch(
+        "tallybridge.cli._ping_tally",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
+        with patch(
+            "tallybridge.connection.TallyConnection.detect_version",
+            new_callable=AsyncMock,
+            return_value=mock_product,
+        ):
+            with patch(
+                "tallybridge.connection.TallyConnection.close",
+                new_callable=AsyncMock,
+            ):
+                result = runner.invoke(app, ["doctor"])
+                assert result.exit_code == 0
+                assert "TSS subscription active" in result.output

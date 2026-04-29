@@ -208,6 +208,36 @@ def mcp(
 
 
 @app.command()
+def serve(
+    port: int = typer.Option(8080, "--port", "-p", help="HTTP port"),
+    host: str = typer.Option(
+        "127.0.0.1", "--host", "-h", help="Bind host"
+    ),
+) -> None:
+    """Start read-only HTTP API bridge for BI tools."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print(
+            "[red]FastAPI/uvicorn not installed. "
+            "Install with: pip install tallybridge[serve][/red]"
+        )
+        raise typer.Exit(1) from None
+
+    from tallybridge.serve import app as api_app
+
+    console.print(
+        f"[bold green]Starting TallyBridge API on "
+        f"http://{host}:{port}[/bold green]"
+    )
+    console.print(
+        f"API docs: http://{host}:{port}/docs"
+    )
+    console.print("Press Ctrl+C to stop")
+    uvicorn.run(api_app, host=host, port=port)
+
+
+@app.command()
 def doctor() -> None:
     """Diagnostic checks."""
     checks = []
@@ -286,6 +316,7 @@ def doctor() -> None:
 
     # 8. TSS status (if Tally is reachable)
     tss_ok = None
+    product = None
     if reachable:
         try:
             from tallybridge.connection import TallyConnection
@@ -312,6 +343,18 @@ def doctor() -> None:
     for label, ok in checks:
         icon = "✓" if ok else "✗"
         console.print(f"  {icon} {label}")
+
+    if tss_ok is False and product is not None:
+        console.print()
+        console.print(
+            "[yellow]TSS subscription expired — renew at tallysolutions.com to access "
+            "TallyPrime 7.0+ features (JSON API, SmartFind, GSTR-3B export, "
+            "TallyDrive).[/yellow]"
+        )
+        console.print(
+            f"[dim]Current version: {product.display_name}. "
+            "Local sync continues to work with XML export.[/dim]"
+        )
 
 
 @app.command()

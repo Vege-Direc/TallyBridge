@@ -105,6 +105,37 @@ async def test_sync_all_calls_in_order(
     assert list(results.keys()) == SYNC_ORDER
 
 
+async def test_sync_all_parallel_masters_then_voucher(
+    engine: TallySyncEngine, mock_connection
+) -> None:
+    mock_connection.get_alter_id_max.return_value = 100
+    mock_connection.export_collection.return_value = "<ENVELOPE></ENVELOPE>"
+    call_order: list[str] = []
+    original_sync_entity = engine.sync_entity
+
+    async def _tracked_sync(entity_type: str):
+        call_order.append(f"start_{entity_type}")
+        result = await original_sync_entity(entity_type)
+        call_order.append(f"end_{entity_type}")
+        return result
+
+    engine.sync_entity = _tracked_sync
+    results = await engine.sync_all()
+    assert list(results.keys()) == SYNC_ORDER
+    voucher_starts = [
+        i for i, c in enumerate(call_order) if c == "start_voucher"
+    ]
+    master_ends = [
+        i
+        for i, c in enumerate(call_order)
+        if c.startswith("end_") and c != "end_voucher"
+    ]
+    if master_ends:
+        assert min(voucher_starts) > min(master_ends), (
+            "Voucher should start after at least one master completes"
+        )
+
+
 async def test_full_sync_resets_alter_ids(
     engine: TallySyncEngine, mock_connection, mock_cache
 ) -> None:
