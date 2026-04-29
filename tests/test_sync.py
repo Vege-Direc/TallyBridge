@@ -596,3 +596,88 @@ def test_extract_guids() -> None:
 def test_extract_guids_invalid_xml() -> None:
     guids = TallySyncEngine._extract_guids("<invalid")
     assert guids == set()
+
+
+def test_parse_entity_json_ledger(mock_parser) -> None:
+    from tallybridge.cache import TallyCache
+    from tallybridge.connection import TallyConnection
+
+    conn = AsyncMock(spec=TallyConnection)
+    cache = MagicMock(spec=TallyCache)
+    engine = TallySyncEngine(conn, cache, mock_parser)
+    data = {
+        "status": "1",
+        "data": {
+            "tallymessage": [
+                {
+                    "ledger": {
+                        "name": "Cash",
+                        "guid": "g1",
+                        "alterid": "100",
+                        "parent": "Cash-in-Hand",
+                        "openingbalance": "0.00 Dr",
+                        "closingbalance": "45000.00 Dr",
+                        "isrevenue": "No",
+                        "affectsgrossprofit": "No",
+                    }
+                }
+            ]
+        },
+    }
+    result = engine._parse_entity_json("ledger", data)
+    assert len(result) == 1
+    assert result[0].name == "Cash"
+
+
+def test_parse_entity_json_unknown_type(mock_parser) -> None:
+    from tallybridge.cache import TallyCache
+    from tallybridge.connection import TallyConnection
+
+    conn = AsyncMock(spec=TallyConnection)
+    cache = MagicMock(spec=TallyCache)
+    engine = TallySyncEngine(conn, cache, mock_parser)
+    result = engine._parse_entity_json("unknown_type", {"data": {"tallymessage": []}})
+    assert result == []
+
+
+def test_parse_entity_routes_json_dict(mock_parser) -> None:
+    from tallybridge.cache import TallyCache
+    from tallybridge.connection import TallyConnection
+
+    conn = AsyncMock(spec=TallyConnection)
+    cache = MagicMock(spec=TallyCache)
+    engine = TallySyncEngine(conn, cache, mock_parser)
+    data = {
+        "status": "1",
+        "data": {
+            "tallymessage": [
+                {
+                    "group": {
+                        "name": "Debtors",
+                        "guid": "g1",
+                        "alterid": "10",
+                        "parent": "Assets",
+                        "primarygroup": "Assets",
+                        "isrevenue": "No",
+                        "affectsgrossprofit": "No",
+                        "netdebitcredit": "Dr",
+                    }
+                }
+            ]
+        },
+    }
+    result = engine._parse_entity("group", data)
+    assert len(result) == 1
+    assert result[0].name == "Debtors"
+
+
+def test_parse_entity_routes_xml_string(mock_parser) -> None:
+    from tallybridge.cache import TallyCache
+    from tallybridge.connection import TallyConnection
+
+    conn = AsyncMock(spec=TallyConnection)
+    cache = MagicMock(spec=TallyCache)
+    mock_parser.parse_ledgers.return_value = []
+    engine = TallySyncEngine(conn, cache, mock_parser)
+    engine._parse_entity("ledger", "<ENVELOPE/>")
+    mock_parser.parse_ledgers.assert_called_once_with("<ENVELOPE/>")

@@ -119,6 +119,7 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_TALLY_PORT` | `9000` | TallyPrime HTTP port |
 | `TALLYBRIDGE_TALLY_COMPANY` | *(auto-detect)* | Company name in TallyPrime |
 | `TALLYBRIDGE_TALLY_ENCODING` | `utf-8` | Request encoding (`utf-8` or `utf-16`) |
+| `TALLYBRIDGE_TALLY_EXPORT_FORMAT` | `auto` | Export format: `auto`, `xml`, or `json` (auto uses JSONEx on TallyPrime 7.0+) |
 | `TALLYBRIDGE_DB_PATH` | `tallybridge.duckdb` | Local database file path |
 | `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
 | `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
@@ -184,7 +185,7 @@ print(q.search("cash"))
 - **Sync** pulls data from TallyPrime via its HTTP API (XML format)
 - **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
 - **Query** reads from the local file — TallyPrime doesn't need to be running
-- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (13 tools)
+- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (17 tools)
 
 ## Compatibility
 

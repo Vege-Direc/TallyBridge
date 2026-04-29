@@ -385,13 +385,16 @@ class TallySyncEngine:
                 continue
 
             try:
-                xml = await self._connection.export_collection(
+                response = await self._connection.export_collection(
                     f"DelCheck_{entity_type}",
                     config["tally_type"],
                     ["GUID"],
                     company=company,
                 )
-                tally_guids = self._extract_guids(xml)
+                if isinstance(response, dict):
+                    tally_guids = self._extract_guids_json(response)
+                else:
+                    tally_guids = self._extract_guids(response)
                 cached_guids = self._cache.get_cached_guids(entity_type)
                 deleted_guids = cached_guids - tally_guids
 
@@ -426,6 +429,22 @@ class TallySyncEngine:
                     guids.add(elem.text.strip())
         except ET.ParseError:
             pass
+        return guids
+
+    @staticmethod
+    def _extract_guids_json(data: dict[str, Any]) -> set[str]:
+        """Extract all GUID values from a Tally JSONEx collection response."""
+        guids: set[str] = set()
+        inner = data.get("data", data)
+        messages = inner.get("tallymessage", [])
+        if isinstance(messages, dict):
+            messages = [messages]
+        for msg in messages:
+            for _key, obj in msg.items():
+                if isinstance(obj, dict):
+                    guid = obj.get("guid")
+                    if guid and isinstance(guid, str) and guid.strip():
+                        guids.add(guid.strip())
         return guids
 
     def _reconcile_counts(self, results: dict[str, SyncResult]) -> None:
@@ -592,7 +611,11 @@ class TallySyncEngine:
         )
         return self._company
 
-    def _parse_entity(self, entity_type: str, xml: str) -> list[Any]:
+    def _parse_entity(
+        self, entity_type: str, xml_or_json: str | dict[str, Any]
+    ) -> list[Any]:
+        if isinstance(xml_or_json, dict):
+            return self._parse_entity_json(entity_type, xml_or_json)
         parse_map: dict[str, Any] = {
             "ledger": self._parser.parse_ledgers,
             "group": self._parser.parse_groups,
@@ -606,7 +629,29 @@ class TallySyncEngine:
         parse_fn = parse_map.get(entity_type)
         if parse_fn is None:
             return []
-        result: list[Any] = parse_fn(xml)
+        result: list[Any] = parse_fn(xml_or_json)
+        return result
+
+    def _parse_entity_json(
+        self, entity_type: str, data: dict[str, Any]
+    ) -> list[Any]:
+        from tallybridge.parser import TallyJSONParser
+
+        json_parser = TallyJSONParser()
+        parse_map: dict[str, Any] = {
+            "ledger": json_parser.parse_ledgers_json,
+            "group": json_parser.parse_groups_json,
+            "stock_item": json_parser.parse_stock_items_json,
+            "voucher_type": json_parser.parse_voucher_types_json,
+            "unit": json_parser.parse_units_json,
+            "stock_group": json_parser.parse_stock_groups_json,
+            "cost_center": json_parser.parse_cost_centers_json,
+            "voucher": json_parser.parse_vouchers_json,
+        }
+        parse_fn = parse_map.get(entity_type)
+        if parse_fn is None:
+            return []
+        result: list[Any] = parse_fn(data)
         return result
 
     def _upsert_entity(

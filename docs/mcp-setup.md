@@ -10,12 +10,6 @@ TallyBridge includes an MCP (Model Context Protocol) server that allows AI assis
 pip install tallybridge
 ```
 
-Or if using uv:
-
-```bash
-uv pip install tallybridge
-```
-
 ### Step 2: Configure Claude Desktop
 
 Edit your Claude Desktop configuration file:
@@ -97,13 +91,23 @@ If the MCP server is configured correctly, Claude will invoke the TallyBridge to
 
 | Tool | Description |
 |---|---|
-| `get_daily_digest` | Business summary for a given date |
+| `get_tally_digest` | Complete business summary: sales, purchases, balances, overdue |
+| `get_ledger_balance` | Closing balance of any ledger |
 | `get_receivables` | Outstanding sales invoices |
 | `get_payables` | Outstanding purchase invoices |
-| `get_trial_balance` | Trial balance for a period |
-| `get_gst_summary` | GST summary for a period |
-| `get_stock_summary` | Stock item quantities and values |
-| `search` | Search across ledgers, vouchers, and parties |
+| `get_party_outstanding` | Full position with one party |
+| `get_sales_summary` | Sales by day/week/month/party |
+| `get_gst_summary` | GST collected, ITC, net liability |
+| `search_tally` | Search ledgers, parties, narrations |
+| `get_sync_status` | Last sync time and record counts |
+| `get_low_stock` | Items at or below quantity threshold |
+| `get_stock_aging` | How long stock has been sitting |
+| `get_cost_center_summary` | Income/expense by cost centre |
+| `get_balance_sheet` | Balance sheet grouped by assets/liabilities |
+| `get_profit_loss` | P&L grouped by income/expense |
+| `get_ledger_account` | Voucher-level general ledger |
+| `get_stock_item_account` | Quantity movements for a stock item |
+| `query_tally_data` | Run custom SQL on local cache |
 
 ### Troubleshooting
 

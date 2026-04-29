@@ -3,8 +3,16 @@
 from datetime import date
 from decimal import Decimal
 
-from tallybridge.parser import TallyXMLParser
+from tallybridge.parser import TallyJSONParser, TallyXMLParser
 from tests.mock_tally import (
+    SAMPLE_COST_CENTERS_JSON,
+    SAMPLE_GROUPS_JSON,
+    SAMPLE_LEDGERS_JSON,
+    SAMPLE_STOCK_GROUPS_JSON,
+    SAMPLE_STOCK_ITEMS_JSON,
+    SAMPLE_UNITS_JSON,
+    SAMPLE_VOUCHER_TYPES_JSON,
+    SAMPLE_VOUCHERS_JSON,
     build_cost_center_xml,
     build_group_xml,
     build_ledger_xml,
@@ -1184,3 +1192,315 @@ class TestParseReportUnknown:
             report_name="PROFIT & LOSS",
         )
         assert report2.report_type == "Profit & Loss"
+
+
+json_parser = TallyJSONParser()
+
+
+class TestJSONParserLedgers:
+    def test_parse_ledgers_json(self) -> None:
+        ledgers = json_parser.parse_ledgers_json(SAMPLE_LEDGERS_JSON)
+        assert len(ledgers) >= 3
+        assert ledgers[0].name == "Cash"
+        assert ledgers[0].guid == "guid-cash-001"
+        assert ledgers[0].alter_id == 100
+        assert ledgers[0].parent_group == "Cash-in-Hand"
+        assert ledgers[0].closing_balance == Decimal("45000")
+
+    def test_parse_ledgers_json_revenue(self) -> None:
+        ledgers = json_parser.parse_ledgers_json(SAMPLE_LEDGERS_JSON)
+        sales = [ld for ld in ledgers if ld.name == "Sales"][0]
+        assert sales.is_revenue is True
+        assert sales.closing_balance == Decimal("-850000")
+
+    def test_parse_ledgers_json_empty(self) -> None:
+        ledgers = json_parser.parse_ledgers_json(
+            {"status": "1", "data": {"tallymessage": []}}
+        )
+        assert ledgers == []
+
+    def test_parse_ledgers_json_invalid_message(self) -> None:
+        data = {
+            "status": "1",
+            "data": {
+                "tallymessage": [
+                    {"notaledger": {"name": "X"}},
+                    {"ledger": {"name": "Valid"}},
+                ]
+            },
+        }
+        ledgers = json_parser.parse_ledgers_json(data)
+        assert len(ledgers) == 1
+
+
+class TestJSONParserGroups:
+    def test_parse_groups_json(self) -> None:
+        groups = json_parser.parse_groups_json(SAMPLE_GROUPS_JSON)
+        assert len(groups) >= 2
+        assert groups[0].name == "Sundry Debtors"
+        assert groups[0].guid == "guid-grp-001"
+        assert groups[0].alter_id == 10
+        assert groups[0].primary_group == "Assets"
+
+    def test_parse_groups_net_debit_credit(self) -> None:
+        groups = json_parser.parse_groups_json(SAMPLE_GROUPS_JSON)
+        creditors = [g for g in groups if g.name == "Sundry Creditors"][0]
+        assert creditors.net_debit_credit == "Cr"
+
+
+class TestJSONParserStockItems:
+    def test_parse_stock_items_json(self) -> None:
+        items = json_parser.parse_stock_items_json(SAMPLE_STOCK_ITEMS_JSON)
+        assert len(items) >= 1
+        assert items[0].name == "Widget A"
+        assert items[0].gst_rate == Decimal("18")
+        assert items[0].hsn_code == "8471"
+        assert items[0].closing_quantity == Decimal("150")
+        assert items[0].closing_value == Decimal("45000")
+
+
+class TestJSONParserUnits:
+    def test_parse_units_json(self) -> None:
+        units = json_parser.parse_units_json(SAMPLE_UNITS_JSON)
+        assert len(units) >= 1
+        assert units[0].name == "Nos"
+        assert units[0].unit_type == "Simple"
+        assert units[0].decimal_places == 0
+
+
+class TestJSONParserStockGroups:
+    def test_parse_stock_groups_json(self) -> None:
+        groups = json_parser.parse_stock_groups_json(SAMPLE_STOCK_GROUPS_JSON)
+        assert len(groups) >= 1
+        assert groups[0].name == "Stock-in-Trade"
+        assert groups[0].should_quantities_add is True
+
+
+class TestJSONParserCostCenters:
+    def test_parse_cost_centers_json(self) -> None:
+        centers = json_parser.parse_cost_centers_json(SAMPLE_COST_CENTERS_JSON)
+        assert len(centers) >= 1
+        assert centers[0].name == "Head Office"
+        assert centers[0].cost_centre_type == "Primary"
+
+
+class TestJSONParserVoucherTypes:
+    def test_parse_voucher_types_json(self) -> None:
+        vtypes = json_parser.parse_voucher_types_json(SAMPLE_VOUCHER_TYPES_JSON)
+        assert len(vtypes) >= 1
+        assert vtypes[0].name == "Sales"
+        assert vtypes[0].parent == "Accounting Vouchers"
+
+
+class TestJSONParserVouchers:
+    def test_parse_vouchers_json(self) -> None:
+        vouchers = json_parser.parse_vouchers_json(SAMPLE_VOUCHERS_JSON)
+        assert len(vouchers) >= 2
+        v1 = vouchers[0]
+        assert v1.guid == "guid-v-001"
+        assert v1.voucher_type == "Sales"
+        assert v1.date == date(2025, 4, 1)
+        assert v1.voucher_number == "SI/001/25"
+
+    def test_parse_vouchers_json_ledger_entries(self) -> None:
+        vouchers = json_parser.parse_vouchers_json(SAMPLE_VOUCHERS_JSON)
+        v1 = vouchers[0]
+        assert len(v1.ledger_entries) == 4
+        assert v1.ledger_entries[0].ledger_name == "Sharma Trading Co"
+        assert v1.ledger_entries[0].amount == Decimal("50000")
+        assert v1.ledger_entries[1].ledger_name == "Sales"
+        assert v1.ledger_entries[1].amount == Decimal("-50000")
+
+    def test_parse_vouchers_json_gst_amount(self) -> None:
+        vouchers = json_parser.parse_vouchers_json(SAMPLE_VOUCHERS_JSON)
+        v1 = vouchers[0]
+        assert v1.gst_amount > Decimal("0")
+
+    def test_parse_vouchers_json_cancelled(self) -> None:
+        vouchers = json_parser.parse_vouchers_json(SAMPLE_VOUCHERS_JSON)
+        for v in vouchers:
+            if v.guid == "guid-v-001":
+                assert v.is_cancelled is False
+
+    def test_parse_vouchers_json_empty(self) -> None:
+        vouchers = json_parser.parse_vouchers_json(
+            {"status": "1", "data": {"tallymessage": []}}
+        )
+        assert vouchers == []
+
+    def test_parse_vouchers_json_uses_ledgerentries_fallback(self) -> None:
+        data = {
+            "status": "1",
+            "data": {
+                "tallymessage": [
+                    {
+                        "voucher": {
+                            "guid": "guid-v-fb",
+                            "alterid": "600",
+                            "date": "20250601",
+                            "vouchernumber": "FB/001",
+                            "vouchertypename": "Payment",
+                            "ledgerentries.list": [
+                                {
+                                    "ledgername": "Cash",
+                                    "amount": "-500.00",
+                                },
+                                {
+                                    "ledgername": "Expense",
+                                    "amount": "500.00",
+                                },
+                            ],
+                        }
+                    }
+                ]
+            },
+        }
+        vouchers = json_parser.parse_vouchers_json(data)
+        assert len(vouchers) == 1
+        assert len(vouchers[0].ledger_entries) == 2
+
+
+class TestJSONParserReport:
+    def test_parse_report_json_balance_sheet(self) -> None:
+        data = {
+            "status": "1",
+            "data": {
+                "dspaccname": [
+                    {"dspdispname": "Capital"},
+                    {"dspdispname": "Cash"},
+                ],
+                "dspaccinfo": [
+                    {
+                        "dspcldramt": {"dspcldramta": "0"},
+                        "dspclcramt": {"dspclcramta": "100000"},
+                    },
+                    {
+                        "dspcldramt": {"dspcldramta": "100000"},
+                        "dspclcramt": {"dspclcramta": "0"},
+                    },
+                ],
+            },
+        }
+        report = TallyJSONParser.parse_report_json(
+            data, report_name="Balance Sheet", from_date=date(2025, 1, 1)
+        )
+        assert report.report_type == "Balance Sheet"
+        assert len(report.lines) == 2
+
+    def test_parse_report_json_trial_balance(self) -> None:
+        data = {
+            "status": "1",
+            "data": {
+                "dspaccname": [{"dspdispname": "Cash"}],
+                "dspaccinfo": [
+                    {
+                        "dspcldramt": {"dspcldramta": "50000"},
+                        "dspclcramt": {"dspclcramta": "0"},
+                    },
+                ],
+            },
+        }
+        report = TallyJSONParser.parse_report_json(
+            data, report_name="Trial Balance"
+        )
+        assert report.report_type == "Trial Balance"
+        assert len(report.trial_balance) == 1
+        assert report.trial_balance[0].closing_debit == Decimal("50000")
+
+    def test_parse_report_json_day_book(self) -> None:
+        data = {
+            "status": "1",
+            "data": {
+                "tallymessage": [
+                    {
+                        "voucher": {
+                            "guid": "g1",
+                            "date": "20250401",
+                            "vouchertypename": "Sales",
+                            "vouchernumber": "1",
+                        }
+                    }
+                ]
+            },
+        }
+        report = TallyJSONParser.parse_report_json(
+            data, report_name="Day Book"
+        )
+        assert report.report_type == "Day Book"
+        assert len(report.vouchers) == 1
+
+    def test_parse_report_json_unknown(self) -> None:
+        report = TallyJSONParser.parse_report_json(
+            {"status": "1", "data": {}}, report_name="Custom"
+        )
+        assert report.report_type == "Unknown"
+
+    def test_parse_report_json_empty_data(self) -> None:
+        report = TallyJSONParser.parse_report_json(
+            {"status": "1", "data": {"dspaccname": [], "dspaccinfo": []}},
+            report_name="Balance Sheet",
+        )
+        assert len(report.lines) == 0
+
+
+class TestJSONParserHelperMethods:
+    def test_get_val_none_obj(self) -> None:
+        assert TallyJSONParser._get_val(None, "key") == ""
+        assert TallyJSONParser._get_val(None, "key", "default") == "default"
+
+    def test_get_val_missing_key(self) -> None:
+        assert TallyJSONParser._get_val({}, "key") == ""
+        assert TallyJSONParser._get_val({"other": 1}, "key") == ""
+
+    def test_get_val_int_value(self) -> None:
+        assert TallyJSONParser._get_val({"key": 42}, "key") == "42"
+
+    def test_get_list_none(self) -> None:
+        assert TallyJSONParser._get_list({}, "key") == []
+
+    def test_get_list_single_dict(self) -> None:
+        result = TallyJSONParser._get_list({"key": {"a": 1}}, "key")
+        assert len(result) == 1
+        assert result[0] == {"a": 1}
+
+    def test_get_list_array(self) -> None:
+        result = TallyJSONParser._get_list(
+            {"key": [{"a": 1}, {"b": 2}]}, "key"
+        )
+        assert len(result) == 2
+
+    def test_get_tally_messages_dict(self) -> None:
+        data = {"data": {"tallymessage": {"ledger": {"name": "X"}}}}
+        msgs = TallyJSONParser._get_tally_messages(data)
+        assert len(msgs) == 1
+
+    def test_get_tally_messages_list(self) -> None:
+        data = {
+            "data": {
+                "tallymessage": [
+                    {"ledger": {"name": "X"}},
+                    {"ledger": {"name": "Y"}},
+                ]
+            }
+        }
+        msgs = TallyJSONParser._get_tally_messages(data)
+        assert len(msgs) == 2
+
+    def test_parse_bill_credit_period_json_none(self) -> None:
+        assert TallyJSONParser._parse_bill_credit_period_json(None) is None
+
+    def test_parse_bill_credit_period_json_int(self) -> None:
+        assert TallyJSONParser._parse_bill_credit_period_json(30) == 30
+
+    def test_parse_bill_credit_period_json_string(self) -> None:
+        assert TallyJSONParser._parse_bill_credit_period_json("45") == 45
+
+    def test_parse_bill_credit_period_json_dict(self) -> None:
+        assert (
+            TallyJSONParser._parse_bill_credit_period_json({"indays": "60"}) == 60
+        )
+
+    def test_parse_bill_credit_period_json_invalid_string(self) -> None:
+        assert (
+            TallyJSONParser._parse_bill_credit_period_json("abc") is None
+        )

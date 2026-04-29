@@ -81,3 +81,30 @@ def test_voucher_batch_size_validation() -> None:
         TallyBridgeConfig(voucher_batch_size=50)
     with pytest.raises(ValidationError):
         TallyBridgeConfig(voucher_batch_size=20000)
+
+
+def test_tally_export_format_default() -> None:
+    config = TallyBridgeConfig()
+    assert config.tally_export_format == "auto"
+
+
+def test_tally_export_format_valid_values() -> None:
+    for val in ("auto", "xml", "json"):
+        config = TallyBridgeConfig(tally_export_format=val)
+        assert config.tally_export_format == val
+
+
+def test_tally_export_format_case_insensitive() -> None:
+    config = TallyBridgeConfig(tally_export_format="JSON")
+    assert config.tally_export_format == "json"
+
+
+def test_tally_export_format_invalid() -> None:
+    with pytest.raises(ValidationError):
+        TallyBridgeConfig(tally_export_format="yaml")
+
+
+def test_tally_export_format_env_var() -> None:
+    with patch.dict(os.environ, {"TALLYBRIDGE_TALLY_EXPORT_FORMAT": "json"}):
+        config = TallyBridgeConfig()
+        assert config.tally_export_format == "json"

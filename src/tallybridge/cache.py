@@ -961,9 +961,7 @@ class TallyCache:
             logger.warning("Failed to get cached GUIDs for {}: {}", entity_type, exc)
             return set()
 
-    def delete_records_by_guid(
-        self, entity_type: str, guids: set[str]
-    ) -> int:
+    def delete_records_by_guid(self, entity_type: str, guids: set[str]) -> int:
         """Delete records by GUID set. Cascades to child tables for vouchers.
 
         Args:

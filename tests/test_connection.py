@@ -1,5 +1,7 @@
 """Tests for connection — SPECS.md §4."""
 
+import json
+
 import httpx
 import pytest
 from pytest_httpserver import HTTPServer
@@ -7,6 +9,7 @@ from pytest_httpserver import HTTPServer
 from tallybridge.config import TallyBridgeConfig
 from tallybridge.connection import TallyConnection
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
+from tallybridge.version import TallyProduct
 from tests.mock_tally import setup_mock_routes
 
 
@@ -23,6 +26,18 @@ def conn(mock_server: HTTPServer):
         tally_port=mock_server.port,
     )
     connection = TallyConnection(config)
+    yield connection
+
+
+@pytest.fixture
+def json_conn(mock_server: HTTPServer):
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+        tally_export_format="json",
+    )
+    connection = TallyConnection(config)
+    connection._detected_version = TallyProduct.PRIME_7
     yield connection
 
 
@@ -44,6 +59,16 @@ async def test_export_collection_returns_xml(conn: TallyConnection) -> None:
         "TestLedgers", "Ledger", ["NAME", "GUID", "ALTERID"]
     )
     assert "<LEDGER" in xml
+
+
+async def test_export_collection_returns_json(
+    json_conn: TallyConnection,
+) -> None:
+    result = await json_conn.export_collection(
+        "Sync_ledger", "Ledger", ["NAME", "GUID", "ALTERID"]
+    )
+    assert isinstance(result, dict)
+    assert "status" in result
 
 
 async def test_export_collection_raises_connection_error() -> None:
@@ -319,3 +344,260 @@ def test_export_object_parse_routing() -> None:
     v_result = parser.parse_vouchers(voucher_xml)
     assert len(v_result) == 1
     assert v_result[0].voucher_type == "Sales"
+
+
+def test_build_collection_json_structure() -> None:
+    headers, body = TallyConnection._build_collection_json(
+        "TestColl", "Ledger", ["NAME", "GUID"], company="Test Co"
+    )
+    assert headers["tallyrequest"] == "Export"
+    assert headers["type"] == "Collection"
+    assert headers["id"] == "TestColl"
+    assert body["static_variables"]["svexportformat"] == "JSONEx"
+    assert body["static_variables"]["svcurrentcompany"] == "Test Co"
+    assert len(body["tdlmessage"]) == 1
+    assert body["tdlmessage"][0]["collection"]["type"] == "Ledger"
+
+
+def test_build_collection_json_with_filter() -> None:
+    headers, body = TallyConnection._build_collection_json(
+        "TestColl", "Ledger", ["NAME"], filter_expr="$ALTERID > 100"
+    )
+    assert body["tdlmessage"][0]["collection"]["filter"] == "AltFilter"
+    assert body["tdlmessage"][0]["system"]["name"] == "AltFilter"
+    assert body["tdlmessage"][0]["system"]["text"] == "$ALTERID > 100"
+
+
+def test_build_object_json_by_name() -> None:
+    headers, body = TallyConnection._build_object_json(
+        "Ledger", name="Cash", company="Test Co"
+    )
+    assert headers["tallyrequest"] == "Export"
+    assert headers["type"] == "Object"
+    assert headers["subtype"] == "Ledger"
+    assert headers["id"] == "Cash"
+    assert "id-encoded" not in headers
+    assert body["static_variables"]["svexportformat"] == "JSONEx"
+
+
+def test_build_object_json_by_guid() -> None:
+    headers, body = TallyConnection._build_object_json(
+        "Ledger", guid="abc-123"
+    )
+    assert headers["id"] == "abc-123"
+
+
+def test_build_object_json_base64_encoding() -> None:
+    headers, body = TallyConnection._build_object_json(
+        "Ledger", name="शर्मा ट्रेडर्स", supports_base64=True
+    )
+    assert headers["id"] == "शर्मा ट्रेडर्स"
+    assert "id-encoded" in headers
+    import base64
+
+    decoded = base64.b64decode(headers["id-encoded"]).decode("utf-8")
+    assert decoded == "शर्मा ट्रेडर्स"
+
+
+def test_build_object_json_no_base64_for_ascii() -> None:
+    headers, body = TallyConnection._build_object_json(
+        "Ledger", name="Cash", supports_base64=True
+    )
+    assert "id-encoded" not in headers
+
+
+def test_build_report_json_structure() -> None:
+    headers, body = TallyConnection._build_report_json(
+        "Balance Sheet", from_date="20250101", to_date="20251231", company="Test Co"
+    )
+    assert headers["tallyrequest"] == "Export"
+    assert headers["type"] == "Data"
+    assert headers["id"] == "Balance Sheet"
+    assert body["static_variables"]["svexportformat"] == "JSONEx"
+    assert body["static_variables"]["svfromdate"] == "20250101"
+    assert body["static_variables"]["svtodate"] == "20251231"
+    assert body["static_variables"]["svcurrentcompany"] == "Test Co"
+    assert body["static_variables"]["svexportinplainformat"] == "Yes"
+
+
+def test_get_export_format_auto_without_version() -> None:
+    config = TallyBridgeConfig(tally_export_format="auto")
+    conn = TallyConnection(config)
+    assert conn._get_export_format() == "xml"
+
+
+def test_get_export_format_auto_with_prime7() -> None:
+    config = TallyBridgeConfig(tally_export_format="auto")
+    conn = TallyConnection(config)
+    conn._detected_version = TallyProduct.PRIME_7
+    assert conn._get_export_format() == "json"
+
+
+def test_get_export_format_auto_with_erp9() -> None:
+    config = TallyBridgeConfig(tally_export_format="auto")
+    conn = TallyConnection(config)
+    conn._detected_version = TallyProduct.ERP9
+    assert conn._get_export_format() == "xml"
+
+
+def test_get_export_format_forced_xml() -> None:
+    config = TallyBridgeConfig(tally_export_format="xml")
+    conn = TallyConnection(config)
+    conn._detected_version = TallyProduct.PRIME_7
+    assert conn._get_export_format() == "xml"
+
+
+def test_get_export_format_forced_json() -> None:
+    config = TallyBridgeConfig(tally_export_format="json")
+    conn = TallyConnection(config)
+    assert conn._get_export_format() == "json"
+
+
+def test_require_capability_passes_when_no_version() -> None:
+    config = TallyBridgeConfig()
+    conn = TallyConnection(config)
+    conn._require_capability("json_api")
+
+
+def test_require_capability_passes_when_supported() -> None:
+    config = TallyBridgeConfig()
+    conn = TallyConnection(config)
+    conn._detected_version = TallyProduct.PRIME_7
+    conn._require_capability("json_api")
+
+
+def test_require_capability_raises_when_unsupported() -> None:
+    config = TallyBridgeConfig()
+    conn = TallyConnection(config)
+    conn._detected_version = TallyProduct.ERP9
+    with pytest.raises(TallyConnectionError, match="json_api"):
+        conn._require_capability("json_api")
+
+
+async def test_post_json_success(
+    mock_server: HTTPServer,
+) -> None:
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+    )
+    connection = TallyConnection(config)
+    headers = {
+        "tallyrequest": "Export",
+        "type": "Collection",
+        "id": "Sync_ledger",
+    }
+    body = {
+        "static_variables": {"svexportformat": "JSONEx"},
+        "tdlmessage": [
+            {
+                "collection": {
+                    "name": "Sync_ledger",
+                    "type": "Ledger",
+                    "fetch": "NAME,GUID",
+                }
+            }
+        ],
+    }
+    result = await connection.post_json(headers, body)
+    assert isinstance(result, dict)
+    await connection.close()
+
+
+async def test_post_json_status_minus_one(
+    mock_server: HTTPServer,
+) -> None:
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+    )
+    connection = TallyConnection(config)
+    original_post = connection._client.post
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            content=json.dumps({"status": "-1", "error": "Something broke"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    connection._client.post = mock_post
+    with pytest.raises(TallyDataError, match="status -1"):
+        await connection.post_json({}, {})
+    connection._client.post = original_post
+    await connection.close()
+
+
+async def test_post_json_status_0_strict(
+    mock_server: HTTPServer,
+) -> None:
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+        strict_status=True,
+    )
+    connection = TallyConnection(config)
+    original_post = connection._client.post
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            content=json.dumps({"status": "0", "data": {}}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    connection._client.post = mock_post
+    with pytest.raises(TallyDataError, match="strict mode"):
+        await connection.post_json({}, {})
+    connection._client.post = original_post
+    await connection.close()
+
+
+async def test_post_json_invalid_json(
+    mock_server: HTTPServer,
+) -> None:
+    config = TallyBridgeConfig(
+        tally_host="localhost",
+        tally_port=mock_server.port,
+    )
+    connection = TallyConnection(config)
+    original_post = connection._client.post
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            content=b"not valid json {{{",
+            headers={"Content-Type": "application/json"},
+        )
+
+    connection._client.post = mock_post
+    with pytest.raises(TallyDataError, match="invalid JSON"):
+        await connection.post_json({}, {})
+    connection._client.post = original_post
+    await connection.close()
+
+
+async def test_post_json_connection_error() -> None:
+    config = TallyBridgeConfig(tally_host="localhost", tally_port=19999)
+    connection = TallyConnection(config)
+    with pytest.raises(TallyConnectionError):
+        await connection.post_json({}, {})
+    await connection.close()
+
+
+async def test_export_object_json(
+    json_conn: TallyConnection,
+) -> None:
+    result = await json_conn.export_object("Ledger", name="Cash")
+    assert isinstance(result, dict)
+    await json_conn.close()
+
+
+async def test_fetch_report_json(
+    json_conn: TallyConnection,
+) -> None:
+    result = await json_conn.fetch_report(
+        "Balance Sheet", from_date="20250101", to_date="20251231"
+    )
+    assert isinstance(result, dict)
+    await json_conn.close()

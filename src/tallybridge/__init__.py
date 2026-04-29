@@ -25,7 +25,7 @@ from tallybridge.models.report import (
     TrialBalanceLine,
 )
 from tallybridge.models.voucher import TallyVoucher, TallyVoucherEntry
-from tallybridge.parser import TallyXMLParser
+from tallybridge.parser import TallyJSONParser, TallyXMLParser
 from tallybridge.query import TallyQuery
 from tallybridge.sync import TallySyncEngine
 from tallybridge.version import TallyProduct, detect_tally_version
@@ -69,17 +69,18 @@ def connect(
     except RuntimeError:
         loop = None
 
-    async def _sync() -> None:
-        await engine.sync_all()
-        await connection.close()
-
     if loop and loop.is_running():
         import concurrent.futures
 
+        def _run_sync() -> None:
+            asyncio.run(engine.sync_all())
+            asyncio.run(connection.close())
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(asyncio.run, _sync()).result()
+            pool.submit(_run_sync).result()
     else:
-        asyncio.run(_sync())
+        asyncio.run(engine.sync_all())
+        asyncio.run(connection.close())
 
     return TallyQuery(cache)
 
@@ -96,6 +97,7 @@ __all__ = [
     "SyncResult",
     "TallyQuery",
     "TallyXMLParser",
+    "TallyJSONParser",
     "TallyLedger",
     "TallyGroup",
     "TallyStockItem",

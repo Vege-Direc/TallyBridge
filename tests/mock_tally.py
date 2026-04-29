@@ -1,6 +1,11 @@
 """Mock Tally HTTP server — see SPECS.md §11a."""
 
+import json
+from decimal import Decimal
+from typing import Any
 from xml.sax.saxutils import escape as xml_escape
+
+from werkzeug import Response
 
 SAMPLE_LEDGERS = [
     ("guid-cash-001", 100, "Cash", "Cash-in-Hand", "45000.00 Dr", False, None),
@@ -551,15 +556,255 @@ def build_voucher_xml_all_ledger(
     return "".join(lines)
 
 
-from decimal import Decimal  # noqa: E402
+SAMPLE_LEDGERS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "ledger": {
+                    "name": "Cash",
+                    "guid": "guid-cash-001",
+                    "alterid": "100",
+                    "parent": "Cash-in-Hand",
+                    "openingbalance": "0.00 Dr",
+                    "closingbalance": "45000.00 Dr",
+                    "isrevenue": "No",
+                    "affectsgrossprofit": "No",
+                    "ledmailingname": "Cash",
+                }
+            },
+            {
+                "ledger": {
+                    "name": "HDFC Bank",
+                    "guid": "guid-hdfc-001",
+                    "alterid": "101",
+                    "parent": "Bank Accounts",
+                    "openingbalance": "0.00 Dr",
+                    "closingbalance": "250000.00 Dr",
+                    "isrevenue": "No",
+                    "affectsgrossprofit": "No",
+                    "ledmailingname": "HDFC Bank",
+                }
+            },
+            {
+                "ledger": {
+                    "name": "Sales",
+                    "guid": "guid-sales-001",
+                    "alterid": "103",
+                    "parent": "Sales Accounts",
+                    "openingbalance": "0.00 Cr",
+                    "closingbalance": "850000.00 Cr",
+                    "isrevenue": "Yes",
+                    "affectsgrossprofit": "No",
+                    "gstin": "",
+                    "ledmailingname": "Sales",
+                }
+            },
+        ]
+    },
+}
 
-from werkzeug import Response  # noqa: E402
+SAMPLE_GROUPS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "group": {
+                    "name": "Sundry Debtors",
+                    "guid": "guid-grp-001",
+                    "alterid": "10",
+                    "parent": "Current Assets",
+                    "primarygroup": "Assets",
+                    "isrevenue": "No",
+                    "affectsgrossprofit": "No",
+                    "netdebitcredit": "Dr",
+                }
+            },
+            {
+                "group": {
+                    "name": "Sundry Creditors",
+                    "guid": "guid-grp-002",
+                    "alterid": "11",
+                    "parent": "Current Liabilities",
+                    "primarygroup": "Liabilities",
+                    "isrevenue": "No",
+                    "affectsgrossprofit": "No",
+                    "netdebitcredit": "Cr",
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_STOCK_ITEMS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "stockitem": {
+                    "name": "Widget A",
+                    "guid": "guid-item-001",
+                    "alterid": "200",
+                    "parent": "Stock-in-Trade",
+                    "baseunits": "Nos",
+                    "gstrate": "18.00",
+                    "hsncode": "8471",
+                    "closingbalance": "150 Nos",
+                    "closingvalue": "45000.00",
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_VOUCHERS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "voucher": {
+                    "guid": "guid-v-001",
+                    "alterid": "500",
+                    "date": "20250401",
+                    "effectivedate": "20250401",
+                    "vouchernumber": "SI/001/25",
+                    "vouchertypename": "Sales",
+                    "partyledgername": "Sharma Trading Co",
+                    "iscancelled": "No",
+                    "isoptional": "No",
+                    "ispostdated": "No",
+                    "isvoid": "No",
+                    "enteredby": "Admin",
+                    "narration": "Invoice SI/001/25",
+                    "allledgerentries.list": [
+                        {
+                            "ledgername": "Sharma Trading Co",
+                            "amount": "50000.00",
+                        },
+                        {
+                            "ledgername": "Sales",
+                            "amount": "-50000.00",
+                        },
+                        {
+                            "ledgername": "CGST",
+                            "amount": "-4500.00",
+                        },
+                        {
+                            "ledgername": "SGST",
+                            "amount": "-4500.00",
+                        },
+                    ],
+                }
+            },
+            {
+                "voucher": {
+                    "guid": "guid-v-002",
+                    "alterid": "501",
+                    "date": "20250405",
+                    "effectivedate": "20250405",
+                    "vouchernumber": "SI/002/25",
+                    "vouchertypename": "Sales",
+                    "partyledgername": "Patel Enterprises",
+                    "iscancelled": "No",
+                    "isoptional": "No",
+                    "ispostdated": "No",
+                    "isvoid": "No",
+                    "enteredby": "Admin",
+                    "narration": "Invoice SI/002/25",
+                    "allledgerentries.list": [
+                        {
+                            "ledgername": "Patel Enterprises",
+                            "amount": "35000.00",
+                        },
+                        {
+                            "ledgername": "Sales",
+                            "amount": "-35000.00",
+                        },
+                    ],
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_UNITS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "unit": {
+                    "name": "Nos",
+                    "guid": "guid-unit-001",
+                    "alterid": "300",
+                    "unittype": "Simple",
+                    "baseunits": "Nos",
+                    "decimalplaces": "0",
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_STOCK_GROUPS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "stockgroup": {
+                    "name": "Stock-in-Trade",
+                    "guid": "guid-sg-001",
+                    "alterid": "310",
+                    "parent": "Primary",
+                    "shouldquantitiesadd": "Yes",
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_COST_CENTERS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "costcentre": {
+                    "name": "Head Office",
+                    "guid": "guid-cc-001",
+                    "alterid": "400",
+                    "parent": "Primary",
+                    "costcentretype": "Primary",
+                }
+            },
+        ]
+    },
+}
+
+SAMPLE_VOUCHER_TYPES_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "vouchertype": {
+                    "name": "Sales",
+                    "guid": "guid-vt-001",
+                    "alterid": "400",
+                    "parent": "Accounting Vouchers",
+                }
+            },
+        ]
+    },
+}
 
 
 def setup_mock_routes(httpserver) -> None:
     """Register all route handlers on the httpserver instance."""
 
     def _handler(request):
+        content_type = request.headers.get("Content-Type", "")
+
+        if content_type.lower().startswith("application/json"):
+            return _json_handler(request)
+
         if request.headers.get("X-Tally-Simulate-Error") == "true":
             body = (
                 "<ENVELOPE><BODY><DATA><LINEERROR>"
@@ -568,7 +813,6 @@ def setup_mock_routes(httpserver) -> None:
             )
             return Response(body.encode("utf-8"), content_type="text/xml;charset=utf-8")
 
-        content_type = request.headers.get("Content-Type", "")
         if "utf-16" in content_type.lower():
             response_encoding = "utf-16-le"
             response_ct = "text/xml;charset=utf-16"
@@ -598,5 +842,102 @@ def setup_mock_routes(httpserver) -> None:
             resp_xml = "<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>"
 
         return Response(resp_xml.encode(response_encoding), content_type=response_ct)
+
+    def _json_handler(request):
+        tally_type = request.headers.get("type", "").lower()
+        subtype = request.headers.get("subtype", "").lower()
+        tally_id = request.headers.get("id", "")
+
+        if request.headers.get("X-Tally-Simulate-Error") == "true":
+            return Response(
+                json.dumps({"status": "-1", "error": "Company not loaded"}),
+                content_type="application/json",
+            )
+
+        if tally_type == "collection":
+            if "ledger" in tally_id.lower():
+                resp = SAMPLE_LEDGERS_JSON
+            elif "group" in tally_id.lower():
+                resp = SAMPLE_GROUPS_JSON
+            elif "stockitem" in tally_id.lower():
+                resp = SAMPLE_STOCK_ITEMS_JSON
+            elif "stockgroup" in tally_id.lower():
+                resp = SAMPLE_STOCK_GROUPS_JSON
+            elif "unit" in tally_id.lower():
+                resp = SAMPLE_UNITS_JSON
+            elif "costcentre" in tally_id.lower():
+                resp = SAMPLE_COST_CENTERS_JSON
+            elif "vouchertype" in tally_id.lower():
+                resp = SAMPLE_VOUCHER_TYPES_JSON
+            elif "voucher" in tally_id.lower():
+                resp = SAMPLE_VOUCHERS_JSON
+            else:
+                try:
+                    body = json.loads(request.data.decode("utf-8"))
+                    tdl_messages = body.get("tdlmessage", [])
+                    for msg in tdl_messages:
+                        coll = msg.get("collection", {})
+                        t = coll.get("type", "").lower()
+                        if "ledger" in t:
+                            resp = SAMPLE_LEDGERS_JSON
+                            break
+                        elif "group" in t:
+                            resp = SAMPLE_GROUPS_JSON
+                            break
+                        elif "stockitem" in t:
+                            resp = SAMPLE_STOCK_ITEMS_JSON
+                            break
+                        elif "stockgroup" in t:
+                            resp = SAMPLE_STOCK_GROUPS_JSON
+                            break
+                        elif "unit" in t:
+                            resp = SAMPLE_UNITS_JSON
+                            break
+                        elif "costcentre" in t:
+                            resp = SAMPLE_COST_CENTERS_JSON
+                            break
+                        elif "vouchertype" in t:
+                            resp = SAMPLE_VOUCHER_TYPES_JSON
+                            break
+                        elif "voucher" in t:
+                            resp = SAMPLE_VOUCHERS_JSON
+                            break
+                    else:
+                        resp = {"status": "1", "data": {"tallymessage": []}}
+                except (json.JSONDecodeError, ValueError):
+                    resp = {"status": "1", "data": {"tallymessage": []}}
+        elif tally_type == "object":
+            if "ledger" in subtype:
+                resp = {
+                    "status": "1",
+                    "data": {
+                        "tallymessage": SAMPLE_LEDGERS_JSON["data"]["tallymessage"][0]
+                    },
+                }
+            elif "group" in subtype:
+                resp = {
+                    "status": "1",
+                    "data": {
+                        "tallymessage": SAMPLE_GROUPS_JSON["data"]["tallymessage"][0]
+                    },
+                }
+            elif "voucher" in subtype:
+                resp = {
+                    "status": "1",
+                    "data": {
+                        "tallymessage": SAMPLE_VOUCHERS_JSON["data"]["tallymessage"][0]
+                    },
+                }
+            else:
+                resp = {"status": "1", "data": {"tallymessage": {}}}
+        elif tally_type == "data":
+            resp = {"status": "1", "data": {}}
+        else:
+            resp = {"status": "1", "data": {}}
+
+        return Response(
+            json.dumps(resp),
+            content_type="application/json",
+        )
 
     httpserver.expect_request("/").respond_with_handler(_handler)

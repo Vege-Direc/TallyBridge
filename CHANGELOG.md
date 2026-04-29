@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+### Added — Phase 11A: JSON API Support (TallyPrime 7.0+)
+
+- **11a**: Add `tally_export_format` config field (`auto`, `xml`, `json`) — when `auto`, uses JSONEx on TallyPrime 7.0+, XML otherwise. Add `post_json()` method to `TallyConnection` with same retry/error handling as `post_xml()`. Add `_build_collection_json()`, `_build_object_json()`, `_build_report_json()` builder methods producing HTTP headers + JSON body per TallyPrime 7.0 spec. Add `_require_capability()` and `_get_export_format()` helpers. Add `id-encoded` header for non-ASCII names in JSON object requests. Modify `export_collection()`, `export_object()`, `fetch_report()` for auto-format selection
+- **11b**: Add `TallyJSONParser` class producing the same Pydantic model types as `TallyXMLParser`. Handles JSONEx response structure (`data.tallymessage` array, lowercase keys, `.list` suffix for sub-collections). Reuses `parse_amount`/`parse_date`/`parse_bool` from XML parser. Supports all entity types: ledgers, groups, stock items, stock groups, units, voucher types, cost centres, vouchers, and reports
+- **11c**: Add auto-format selection in `TallySyncEngine._parse_entity()` — detects `isinstance(response, dict)` and routes to `_parse_entity_json()` which uses `TallyJSONParser`. Return type of `export_collection()` is now `str | dict`
+- **11d**: Wire `encode_name_base64()` into JSON request building — `_build_object_json()` adds `id-encoded` header for non-ASCII names when `supports_base64=True`, `_build_collection_json()` adds `id-encoded` for non-ASCII company names
+- **11a-tests**: Add JSON mock data (`SAMPLE_LEDGERS_JSON`, `SAMPLE_VOUCHERS_JSON`, etc.) and extend mock server to detect `Content-Type: application/json` and return JSON responses. Add 30+ tests covering JSON parser, JSON connection methods, config validation, sync engine JSON routing
+
 ### Added — Phase 10A: Production Readiness
 
 - **10c**: Improve test coverage from 85% to 93.45% (428 tests). Coverage by module: sdk_server.py 95%, sync.py 97%, parser.py 96%, version.py 90%, query.py 91%, cache.py 91%, connection.py 89%, cli.py 90%

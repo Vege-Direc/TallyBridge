@@ -12,6 +12,7 @@ class TallyBridgeConfig(BaseSettings):
     tally_port: int = 9000
     tally_company: str | None = None
     tally_encoding: str = "utf-8"
+    tally_export_format: str = "auto"
     strict_status: bool = False
 
     db_path: str = "tallybridge.duckdb"
@@ -53,6 +54,14 @@ class TallyBridgeConfig(BaseSettings):
         allowed = {"utf-8", "utf-16"}
         if v.lower() not in allowed:
             raise ValueError(f"tally_encoding must be one of {allowed}")
+        return v.lower()
+
+    @field_validator("tally_export_format")
+    @classmethod
+    def validate_export_format(cls, v: str) -> str:
+        allowed = {"auto", "xml", "json"}
+        if v.lower() not in allowed:
+            raise ValueError(f"tally_export_format must be one of {allowed}")
         return v.lower()
 
     @field_validator("voucher_batch_size")

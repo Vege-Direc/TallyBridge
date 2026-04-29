@@ -210,4 +210,12 @@ def tally_connection(mock_tally_server):
         tally_host="localhost",
         tally_port=mock_tally_server.port,
     )
-    return TallyConnection(config)
+    conn = TallyConnection(config)
+    yield conn
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(conn.close())
+    except RuntimeError:
+        asyncio.run(conn.close())
