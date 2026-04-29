@@ -170,31 +170,94 @@ print(q.search("cash"))
   TallyPrime (port 9000)          Your Machine
   ┌─────────────────┐     ┌──────────────────────┐
   │  Accounting data │────→│  TallySyncEngine      │
-  │  (XML over HTTP) │     │  TallyXMLParser       │
-  └─────────────────┘     │          │             │
-                          │          ▼             │
-                          │  tallybridge.duckdb    │
-                          │  (local, offline)      │
-                          │          │             │
-                          │    ┌─────┴──────┐      │
-                          │    │            │      │
-                          │  TallyQuery   MCP Server
-                          │  (Python)    (for AI)   │
-                          └──────────────────────┘
+  │  (XML/JSON HTTP) │     │  TallyXMLParser       │
+  └─────────────────┘     │  TallyJSONParser       │
+                           │          │             │
+                           │          ▼             │
+                           │  tallybridge.duckdb    │
+                           │  (local, offline)      │
+                           │          │             │
+                           │    ┌─────┴──────┐      │
+                           │    │            │      │
+                           │  TallyQuery   MCP Server
+                           │  (Python)    (for AI)   │
+                           └──────────────────────┘
 ```
 
-- **Sync** pulls data from TallyPrime via its HTTP API (XML format)
+- **Sync** pulls data from TallyPrime via its HTTP API (XML or JSON/JSONEx on TallyPrime 7.0+)
 - **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
 - **Query** reads from the local file — TallyPrime doesn't need to be running
+- **Import** write back to TallyPrime (masters and vouchers) when `TALLYBRIDGE_ALLOW_WRITES=true`
 - **MCP** exposes the same data to AI assistants via stdio or HTTP transport (17 tools)
+
+## Import / Write-Back
+
+Create ledgers and vouchers in TallyPrime from Python:
+
+```python
+import asyncio
+from tallybridge import TallyConnection, TallyBridgeConfig
+
+# Set TALLYBRIDGE_ALLOW_WRITES=true in your environment
+config = TallyBridgeConfig(allow_writes=True)
+conn = TallyConnection(config)
+
+# Create a ledger (XML — works on all versions)
+xml = TallyConnection.build_ledger_xml("New Customer", "Sundry Debtors", "0")
+result = asyncio.run(conn.import_masters(xml))
+print(f"Created: {result.created}, Errors: {result.errors}")
+
+# Create a voucher
+xml = TallyConnection.build_voucher_xml(
+    "Sales", "20250101",
+    [{"ledger_name": "Sales", "amount": "-5000"},
+     {"ledger_name": "Cash", "amount": "5000"}],
+    narration="Cash sale",
+)
+result = asyncio.run(conn.import_vouchers(xml))
+print(f"Created: {result.created}")
+
+# Cancel a voucher
+xml = TallyConnection.build_cancel_voucher_xml("guid-abc-123", "Sales")
+result = asyncio.run(conn.import_vouchers(xml))
+
+asyncio.run(conn.close())
+```
+
+For TallyPrime 7.0+, use JSON import:
+
+```python
+conn._detected_version = TallyProduct.PRIME_7
+msg = TallyConnection.build_ledger_json("New Supplier", "Sundry Creditors")
+result = asyncio.run(conn.import_masters_json(msg))
+```
+
+## BI Integration
+
+TallyBridge creates 5 pre-built SQL views in DuckDB for BI tool connections:
+
+| View | Description |
+|---|---|
+| `v_sales_summary` | Sales and credit note vouchers with amounts |
+| `v_receivables` | Outstanding receivables with overdue days |
+| `v_gst_summary` | GST ledger totals by date |
+| `v_stock_summary` | Stock items with quantities and values |
+| `v_party_position` | Party receivable/payable classification |
+
+Connect from BI tools:
+- **Power BI**: Install DuckDB ODBC driver, connect to `tallybridge.duckdb`
+- **Metabase**: Use native DuckDB driver
+- **Superset**: Use DuckDB connector
+- **Excel**: ODBC or export via `COPY table TO 'file.csv'`
 
 ## Compatibility
 
 | Product | Support |
 |---|---|
-| TallyPrime 4.0+ | Primary target (Connected GST) |
-| TallyPrime 1.x–3.x | Supported |
-| Tally.ERP 9 | Best-effort (deprecated by Tally Solutions) |
+| TallyPrime 7.0+ | Full support (JSON/JSONEx API, import, base64 encoding) |
+| TallyPrime 4.0+ | Primary target (XML sync, Connected GST) |
+| TallyPrime 1.x–3.x | Supported (XML only) |
+| Tally.ERP 9 | Best-effort (LEDGERENTRIES.LIST fallback) |
 
 TallyBridge auto-detects your Tally version on first sync.
 
