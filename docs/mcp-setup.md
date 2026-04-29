@@ -89,6 +89,8 @@ If the MCP server is configured correctly, Claude will invoke the TallyBridge to
 
 ### Available MCP Tools
 
+#### Query Tools (read-only)
+
 | Tool | Description |
 |---|---|
 | `get_tally_digest` | Complete business summary: sales, purchases, balances, overdue |
@@ -108,6 +110,36 @@ If the MCP server is configured correctly, Claude will invoke the TallyBridge to
 | `get_ledger_account` | Voucher-level general ledger |
 | `get_stock_item_account` | Quantity movements for a stock item |
 | `query_tally_data` | Run custom SQL on local cache |
+| `get_sync_errors` | List failed sync records |
+
+#### Import Tools (write-back, requires opt-in)
+
+These tools are only available when `TALLYBRIDGE_ALLOW_WRITES=true` is set in your environment. They allow AI assistants to create ledgers and vouchers in TallyPrime.
+
+| Tool | Description |
+|---|---|
+| `create_ledger` | Create a new ledger in TallyPrime (name, parent group, opening balance) |
+| `create_voucher` | Create a new voucher in TallyPrime (type, date, entries, narration) |
+| `cancel_voucher` | Cancel an existing voucher by GUID |
+
+To enable import tools, add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "tallybridge": {
+      "command": "tallybridge-mcp",
+      "env": {
+        "TALLYBRIDGE_TALLY_HOST": "localhost",
+        "TALLYBRIDGE_TALLY_PORT": "9000",
+        "TALLYBRIDGE_ALLOW_WRITES": "true"
+      }
+    }
+  }
+}
+```
+
+> **Warning:** Enabling write-back allows AI assistants to modify data in TallyPrime. Use with caution and review all import operations carefully.
 
 ### Troubleshooting
 

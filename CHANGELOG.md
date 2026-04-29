@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### Added — Phase 11E: HTTP API Bridge
+
+- **11j**: Add `tallybridge serve` CLI command starting a read-only HTTP SQL API bridge using FastAPI. Endpoints: `GET /` (info), `GET /health`, `GET /views` (list BI views), `GET /views/{name}` (query a view), `POST /query` (execute read-only SQL), `GET /tables` (list tables). Includes CORS middleware, SQL injection prevention (keyword blocklist + DuckDB read-only connection), and pagination on view queries. Requires `pip install tallybridge[serve]` for FastAPI/uvicorn
+
+### Added — Phase 9E Completion
+
+- **9ae**: Add `fetch_gstr3b()` method to `TallyConnection` using TYPE=Data report pattern with report name "GSTR 3B". Add `GSTR3BResult` and `GSTR3BSection` models. Add `parse_gstr3b()` to `TallyXMLParser` and `parse_gstr3b_json()` to `TallyJSONParser` for structured section extraction (taxable value, IGST, CGST, SGST, Cess)
+- **9af**: Parallel master entity syncing — `sync_all()` now uses `asyncio.gather()` to sync all 7 master entities concurrently, then syncs vouchers sequentially after masters complete
+- **9aj**: Add TSS renewal prompt to `tallybridge doctor` — when TallyPrime 7.0+ features are unavailable, displays a yellow message with renewal URL (tallysolutions.com) and current version info
+
+### Added — Phase 11D: Documentation
+
+- **11i**: Add `docs/bi-integration.md` with connection guides for Power BI, Metabase, Superset, Looker, Excel, and direct SQL access. Includes schema reference and tips
+- **11l**: Update `docs/mcp-setup.md` with import/write-back tools section (`create_ledger`, `create_voucher`, `cancel_voucher`) requiring `TALLYBRIDGE_ALLOW_WRITES=true`
+
 ### Added — Phase 11B: Import/Write-Back Capability
 
 - **11e**: Add `import_masters()` and `import_vouchers()` XML import methods to `TallyConnection`. Requires `TALLYBRIDGE_ALLOW_WRITES=true` env var. Add `ImportResult` model with created/altered/deleted/errors counts. Add `_parse_import_response_xml()` and `_check_writes_allowed()` helpers. Add `allow_writes: bool = False` config field

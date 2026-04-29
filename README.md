@@ -79,6 +79,8 @@ tallybridge config show       # Print current configuration
 tallybridge config set KEY VALUE  # Set a config value
 tallybridge mcp               # Start MCP server (for AI assistants)
 tallybridge mcp --http        # Start MCP server with HTTP transport
+tallybridge serve             # Start HTTP API bridge for BI tools
+tallybridge serve --port 8080 # Start on custom port
 tallybridge --version         # Show version
 ```
 
@@ -249,6 +251,14 @@ Connect from BI tools:
 - **Metabase**: Use native DuckDB driver
 - **Superset**: Use DuckDB connector
 - **Excel**: ODBC or export via `COPY table TO 'file.csv'`
+- **Any HTTP client**: Use `tallybridge serve` for a REST API (requires `pip install tallybridge[serve]`)
+
+```bash
+pip install tallybridge[serve]
+tallybridge serve --port 8080
+# Then query: curl http://localhost:8080/views/v_sales_summary
+# Or POST SQL: curl -X POST http://localhost:8080/query -d '{"sql":"SELECT * FROM mst_ledger"}'
+```
 
 ## Compatibility
 
