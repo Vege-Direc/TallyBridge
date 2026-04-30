@@ -69,6 +69,8 @@ def config_show() -> None:
     table.add_row("log_level", cfg.log_level)
     table.add_row("supabase_url", cfg.supabase_url or "(not set)")
     table.add_row("supabase_key", "***" if cfg.supabase_key else "(not set)")
+    table.add_row("mcp_api_key", "***" if cfg.mcp_api_key else "(not set)")
+    table.add_row("allow_writes", str(cfg.allow_writes))
     console.print(table)
 
 

@@ -30,6 +30,7 @@ class TallyBridgeConfig(BaseSettings):
     query_cache_ttl: int = 300
     slow_query_threshold: float = 1.0
     export_chunk_size: int = 5000
+    cors_origins: str | None = None
 
     model_config = SettingsConfigDict(
         env_prefix="TALLYBRIDGE_",

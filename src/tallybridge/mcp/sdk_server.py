@@ -1,5 +1,6 @@
 """MCP server using official MCP Python SDK — see RECOMMENDATIONS.md P0-1."""
 
+import hmac
 import os
 import re
 from contextlib import asynccontextmanager
@@ -63,6 +64,9 @@ _DANGEROUS_DUCKDB_FUNCTIONS = frozenset(
 
 _MAX_QUERY_LIMIT = 5000
 _MAX_SEARCH_LENGTH = 200
+_MAX_SEARCH_LIMIT = 100
+_MAX_ERRORS_LIMIT = 1000
+_MAX_AUDIT_LIMIT = 1000
 
 
 def _check_auth(ctx: _Ctx | None) -> None:
@@ -88,7 +92,7 @@ def _check_auth(ctx: _Ctx | None) -> None:
             "Authentication required. Set Authorization: Bearer <api_key> header."
         )
     token = auth_header[7:]
-    if token != config.mcp_api_key:
+    if not hmac.compare_digest(token, config.mcp_api_key):
         raise PermissionError("Invalid API key.")
 
 
@@ -98,6 +102,7 @@ def _validate_sql_query(sql: str, limit: int = 1000) -> str:
     Checks:
     - Must start with SELECT
     - Must not contain dangerous DuckDB functions (file access, etc.)
+    - Must only reference allowed tables
     - Enforces a row limit
     - Blocks multi-statement queries
     """
@@ -111,6 +116,15 @@ def _validate_sql_query(sql: str, limit: int = 1000) -> str:
         pattern = rf"\b{func}\s*\("
         if re.search(pattern, upper_sql):
             raise ValueError(f"DuckDB function '{func}' is not allowed for security.")
+    lower_sql = stripped.lower()
+    for table in _ALLOWED_SQL_TABLES:
+        if re.search(rf"\b{table}\b", lower_sql):
+            break
+    else:
+        raise ValueError(
+            f"Query must reference at least one allowed table: "
+            f"{sorted(_ALLOWED_SQL_TABLES)}"
+        )
     if "LIMIT" not in upper_sql:
         effective_limit = min(limit, _MAX_QUERY_LIMIT)
         stripped += f" LIMIT {effective_limit}"
@@ -297,7 +311,8 @@ async def search_tally(
         return _error_result(
             f"Search query too long ({len(query)} chars). Max: {_MAX_SEARCH_LENGTH}"
         )
-    return _serialize(app_ctx.query.search(query=query, limit=limit))
+    safe_limit = min(limit, _MAX_SEARCH_LIMIT)
+    return _serialize(app_ctx.query.search(query=query, limit=safe_limit))
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
@@ -456,8 +471,9 @@ async def get_sync_errors(
     """Recent sync errors — failed record GUIDs, entity types, error messages."""
     _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    safe_limit = min(limit, _MAX_ERRORS_LIMIT)
     return _serialize(
-        app_ctx.cache.get_sync_errors(entity_type=entity_type, limit=limit)
+        app_ctx.cache.get_sync_errors(entity_type=entity_type, limit=safe_limit)
     )
 
 
@@ -583,6 +599,8 @@ async def export_data(
         return _error_result(
             f"Unknown table '{table}'. Valid: {sorted(VALID_TABLES)}"
         )
+    if format not in ("csv", "json"):
+        return _error_result("Format must be 'csv' or 'json'.")
     if columns:
         for col in columns:
             if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", col):
@@ -603,7 +621,7 @@ async def export_data(
 
     exporter = DataExporter(app_ctx.cache)
     if format == "json":
-        _, rows = exporter._fetch_data(table, columns, where, limit)
+        _, rows = exporter.fetch_data(table, columns, where, limit)
         return _serialize(
             [{k: _serialize(v) for k, v in row.items()} for row in rows]
         )
@@ -623,13 +641,14 @@ async def get_audit_log(
     """Audit log of all write operations (create, cancel, import) with timestamps."""
     _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    safe_limit = min(limit, _MAX_AUDIT_LIMIT)
     return _serialize(
         app_ctx.query.get_audit_log(
             from_date=_parse_date(from_date),
             to_date=_parse_date(to_date),
             entity_type=entity_type,
             operation=operation,
-            limit=limit,
+            limit=safe_limit,
         )
     )
 

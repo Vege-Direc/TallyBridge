@@ -353,6 +353,7 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_QUERY_CACHE_TTL` | `300` | Query result cache TTL in seconds |
 | `TALLYBRIDGE_SLOW_QUERY_THRESHOLD` | `1.0` | Log queries slower than this (seconds) |
 | `TALLYBRIDGE_EXPORT_CHUNK_SIZE` | `5000` | Rows per chunk for chunked export |
+| `TALLYBRIDGE_CORS_ORIGINS` | `*` | Comma-separated CORS origins for HTTP API |
 | `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
 
 Example `.env`:

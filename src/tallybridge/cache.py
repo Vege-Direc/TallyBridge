@@ -1048,11 +1048,21 @@ class TallyCache:
         if os.path.exists(self._db_path):
             db_size_mb = os.path.getsize(self._db_path) / (1024 * 1024)
 
+        schema_version = 0
+        try:
+            sv_result = self.conn.execute(
+                "SELECT MAX(version) FROM schema_version"
+            ).fetchone()
+            if sv_result and sv_result[0] is not None:
+                schema_version = sv_result[0]
+        except Exception:
+            pass
+
         return {
             "record_counts": record_counts,
             "last_sync_times": {k: v["last_sync_at"] for k, v in sync_status.items()},
             "db_size_mb": round(db_size_mb, 2),
-            "schema_version": 0,
+            "schema_version": schema_version,
             "orphan_count": orphan_count,
         }
 
@@ -1195,10 +1205,9 @@ class TallyCache:
     ) -> list[dict[str, Any]]:
         """Execute SQL query with read-only enforcement.
 
-        Temporarily closes the read-write connection, opens a read-only
+        Temporarily closes the write connection, opens a read-only
         DuckDB connection, executes the query, then reopens read-write.
         This physically prevents all write operations during query execution.
-        Never falls back to the read-write connection for queries.
         """
         self._suspend_write_conn()
         try:
@@ -1209,7 +1218,6 @@ class TallyCache:
                 rows = [
                     dict(zip(columns, row, strict=False)) for row in result.fetchall()
                 ]
-
                 return rows
             finally:
                 read_conn.close()
@@ -1220,13 +1228,11 @@ class TallyCache:
             self._resume_write_conn()
 
     def _suspend_write_conn(self) -> None:
-        """Close the write connection temporarily for read-only access."""
         if self._conn is not None:
             self._conn.close()
             self._conn = None
 
     def _resume_write_conn(self) -> None:
-        """Reopen the write connection after read-only access."""
         if self._conn is None:
             self._conn = duckdb.connect(self._db_path)
 

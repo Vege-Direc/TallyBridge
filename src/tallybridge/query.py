@@ -31,6 +31,7 @@ def _parse_date_field(value: Any) -> date | None:
 class TallyQuery:
     def __init__(self, cache: TallyCache) -> None:
         self._cache = cache
+        self._fuzzy_checked: bool | None = None
 
     def get_daily_digest(self, as_of_date: date | None = None) -> DailyDigest:
         """Complete business summary for the given date (default: today)."""
@@ -556,11 +557,14 @@ class TallyQuery:
         }
 
     def _fuzzy_available(self) -> bool:
-        """Check if DuckDB string similarity functions are available."""
+        if self._fuzzy_checked is not None:
+            return self._fuzzy_checked
         try:
             self._cache.query("SELECT similarity('test', 'test') as s")
+            self._fuzzy_checked = True
             return True
         except Exception:
+            self._fuzzy_checked = False
             return False
 
     def _fuzzy_search_ledgers(self, query: str, limit: int) -> list[dict[str, Any]]:

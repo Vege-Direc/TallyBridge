@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import re
 from typing import Any
 
@@ -21,7 +22,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=(get_config().cors_origins or "").split(",")
+    if get_config().cors_origins
+    else ["*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -70,7 +73,7 @@ async def auth_middleware(request: Request, call_next: Any) -> Any:
                 detail="Authentication required. Set Authorization: Bearer <api_key>.",
             )
         token = auth_header[7:]
-        if token != config.mcp_api_key:
+        if not hmac.compare_digest(token, config.mcp_api_key):
             raise HTTPException(status_code=401, detail="Invalid API key.")
     return await call_next(request)
 
@@ -189,15 +192,10 @@ async def list_tables() -> dict[str, Any]:
     cache = _get_cache()
     try:
         results = cache.query_readonly(
-            "SELECT table_name, estimated_size "
-            "FROM information_schema.tables "
-            "WHERE table_schema = 'main' "
-            "ORDER BY table_name"
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'main' ORDER BY table_name"
         )
+        return {"tables": [dict(r) for r in results]}
     except Exception as exc:
         logger.warning("Tables list query failed: {}", exc)
-        results = cache.query_readonly(
-            "SELECT name AS table_name FROM sqlite_master "
-            "WHERE type='table' ORDER BY name"
-        )
-    return {"tables": [dict(r) for r in results]}
+        return {"tables": []}

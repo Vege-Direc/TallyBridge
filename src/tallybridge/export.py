@@ -127,6 +127,15 @@ class DataExporter:
         where: str | None = None,
         limit: int | None = None,
     ) -> tuple[list[str], list[dict[str, Any]]]:
+        return self.fetch_data(table, columns, where, limit)
+
+    def fetch_data(
+        self,
+        table: str,
+        columns: list[str] | None = None,
+        where: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
         db_table = _resolve_table(table)
         _validate_columns(columns)
         _validate_where(where)
