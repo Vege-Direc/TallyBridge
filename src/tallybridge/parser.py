@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 if TYPE_CHECKING:
-    from tallybridge.models.report import GSTR3BSection
+    from tallybridge.models.report import GSTR1Section, GSTR3BSection
 
 from tallybridge.models.master import (
     TallyCostCenter,
@@ -879,6 +879,125 @@ class TallyXMLParser:
                     current_section = ""
         return sections
 
+    @staticmethod
+    def parse_gstr1(xml_str: str) -> list["GSTR1Section"]:
+        """Parse a GSTR-1 TYPE=Data XML response into structured sections.
+
+        The XML structure uses DSPACCNAME/DSPACCINFO patterns similar to
+        other Tally reports. Each section corresponds to a GSTR-1 table
+        (B2B, B2CL, B2CS, CDNR, CDNUR, HSN, DOC_ISSUE).
+        """
+        from tallybridge.models.report import GSTR1Invoice, GSTR1Section
+
+        sections: list[GSTR1Section] = []
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            return sections
+
+        current_section_name = ""
+        current_invoices: list[GSTR1Invoice] = []
+        section_taxable = Decimal("0")
+        section_cgst = Decimal("0")
+        section_sgst = Decimal("0")
+        section_igst = Decimal("0")
+        section_cess = Decimal("0")
+
+        def _flush_section() -> None:
+            nonlocal current_section_name, current_invoices
+            nonlocal section_taxable, section_cgst
+            nonlocal section_sgst, section_igst, section_cess
+            if not current_section_name:
+                return
+            sections.append(
+                GSTR1Section(
+                    section=current_section_name,
+                    description=current_section_name,
+                    invoices=list(current_invoices),
+                    taxable_value=section_taxable,
+                    cgst=section_cgst,
+                    sgst=section_sgst,
+                    igst=section_igst,
+                    cess=section_cess,
+                )
+            )
+            current_section_name = ""
+            current_invoices = []
+            section_taxable = Decimal("0")
+            section_cgst = Decimal("0")
+            section_sgst = Decimal("0")
+            section_igst = Decimal("0")
+            section_cess = Decimal("0")
+
+        for elem in root.iter():
+            tag = elem.tag.upper()
+            if tag == "DSPDISPNAME" and elem.text:
+                name = elem.text.strip()
+                if name and not name.startswith("-"):
+                    _flush_section()
+                    current_section_name = name
+            elif tag == "DSPACCINFO" and current_section_name:
+                taxable = Decimal("0")
+                igst = Decimal("0")
+                cgst = Decimal("0")
+                sgst = Decimal("0")
+                cess = Decimal("0")
+                inv_number = ""
+                inv_date: date | None = None
+                party_gstin = ""
+                party_name = ""
+                place_of_supply = ""
+                supply_type = ""
+                for sub in elem.iter():
+                    stag = sub.tag.upper()
+                    if "TAXABLE" in stag and sub.text:
+                        taxable = TallyXMLParser.parse_amount(sub.text)
+                    elif "IGST" in stag and sub.text:
+                        igst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CGST" in stag and sub.text:
+                        cgst = TallyXMLParser.parse_amount(sub.text)
+                    elif ("SGST" in stag or "SCTAX" in stag) and sub.text:
+                        sgst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CESS" in stag and sub.text:
+                        cess = TallyXMLParser.parse_amount(sub.text)
+                    elif stag == "VOUCHERNUMBER" and sub.text:
+                        inv_number = sub.text.strip()
+                    elif stag == "DATE" and sub.text:
+                        inv_date = TallyXMLParser.parse_date(sub.text.strip())
+                    elif stag == "PARTYGSTIN" and sub.text:
+                        party_gstin = sub.text.strip()
+                    elif stag in ("PARTYNAME", "PARTYLEDGERNAME") and sub.text:
+                        party_name = sub.text.strip()
+                    elif stag == "PLACEOFSUPPLY" and sub.text:
+                        place_of_supply = sub.text.strip()
+                    elif stag == "SUPPLYTYPE" and sub.text:
+                        supply_type = sub.text.strip()
+
+                if taxable or igst or cgst or sgst or cess:
+                    current_invoices.append(
+                        GSTR1Invoice(
+                            invoice_number=inv_number,
+                            invoice_date=inv_date,
+                            party_gstin=party_gstin,
+                            party_name=party_name,
+                            place_of_supply=place_of_supply,
+                            taxable_value=taxable,
+                            cgst=cgst,
+                            sgst=sgst,
+                            igst=igst,
+                            cess=cess,
+                            supply_type=supply_type,
+                        )
+                    )
+                    section_taxable += taxable
+                    section_cgst += cgst
+                    section_sgst += sgst
+                    section_igst += igst
+                    section_cess += cess
+
+        _flush_section()
+        return sections
+
 
 class TallyJSONParser:
     """Parse TallyPrime 7.0+ JSONEx responses into the same Pydantic models.
@@ -966,9 +1085,7 @@ class TallyJSONParser:
                     affects_gross_profit=TallyXMLParser.parse_bool(
                         self._get_val(group_data, "affectsgrossprofit")
                     ),
-                    net_debit_credit=self._get_val(
-                        group_data, "netdebitcredit", "Dr"
-                    ),
+                    net_debit_credit=self._get_val(group_data, "netdebitcredit", "Dr"),
                 )
                 groups.append(group)
             except Exception as exc:
@@ -993,7 +1110,8 @@ class TallyJSONParser:
                     unit=self._get_val(item_data, "baseunits"),
                     gst_rate=TallyXMLParser.parse_amount(
                         self._get_val(item_data, "gstrate")
-                    ) or None,
+                    )
+                    or None,
                     hsn_code=self._get_val(item_data, "hsncode") or None,
                     closing_quantity=closing_qty,
                     closing_value=TallyXMLParser.parse_amount(
@@ -1041,9 +1159,7 @@ class TallyJSONParser:
                     alter_id=int(self._get_val(unit_data, "alterid", "0")),
                     unit_type=self._get_val(unit_data, "unittype", "Simple"),
                     base_units=self._get_val(unit_data, "baseunits") or None,
-                    decimal_places=int(
-                        self._get_val(unit_data, "decimalplaces", "0")
-                    ),
+                    decimal_places=int(self._get_val(unit_data, "decimalplaces", "0")),
                     symbol=self._get_val(unit_data, "symbol") or None,
                 )
                 units.append(unit)
@@ -1103,8 +1219,8 @@ class TallyJSONParser:
             try:
                 ledger_entries = self._parse_ledger_entries_json(v_data)
                 inventory_entries = self._parse_inventory_entries_json(v_data)
-                cost_centre_allocations = (
-                    self._parse_cost_centre_allocations_json(v_data)
+                cost_centre_allocations = self._parse_cost_centre_allocations_json(
+                    v_data
                 )
                 bill_allocations = self._parse_bill_allocations_json(v_data)
                 total_amount = sum(
@@ -1119,9 +1235,7 @@ class TallyJSONParser:
                     ),
                     Decimal("0"),
                 )
-                parsed_date = TallyXMLParser.parse_date(
-                    self._get_val(v_data, "date")
-                )
+                parsed_date = TallyXMLParser.parse_date(self._get_val(v_data, "date"))
                 if parsed_date is None:
                     logger.warning(
                         "Skipping voucher with unparseable date: guid={}",
@@ -1148,9 +1262,7 @@ class TallyJSONParser:
                     is_postdated=TallyXMLParser.parse_bool(
                         self._get_val(v_data, "ispostdated")
                     ),
-                    is_void=TallyXMLParser.parse_bool(
-                        self._get_val(v_data, "isvoid")
-                    ),
+                    is_void=TallyXMLParser.parse_bool(self._get_val(v_data, "isvoid")),
                     party_ledger=self._get_val(v_data, "partyledgername") or None,
                     party_gstin=self._get_val(v_data, "partygstin") or None,
                     place_of_supply=self._get_val(v_data, "placeofsupply") or None,
@@ -1237,9 +1349,7 @@ class TallyJSONParser:
             for cat in self._get_list(entry, "categoryallocations.list"):
                 for cc in self._get_list(cat, "costcentre.list"):
                     cc_name = self._get_val(cc, "costcentrename")
-                    amount = TallyXMLParser.parse_amount(
-                        self._get_val(cc, "amount")
-                    )
+                    amount = TallyXMLParser.parse_amount(self._get_val(cc, "amount"))
                     allocations.append(
                         TallyCostCentreAllocation(
                             ledger_name=ledger_name,
@@ -1263,13 +1373,9 @@ class TallyJSONParser:
             for bill in self._get_list(entry, "billallocations.list"):
                 bill_type = self._get_val(bill, "billtype") or None
                 bill_name = self._get_val(bill, "name")
-                amount = TallyXMLParser.parse_amount(
-                    self._get_val(bill, "amount")
-                )
+                amount = TallyXMLParser.parse_amount(self._get_val(bill, "amount"))
                 bcp_data = bill.get("billcreditperiod")
-                bill_credit_period = self._parse_bill_credit_period_json(
-                    bcp_data
-                )
+                bill_credit_period = self._parse_bill_credit_period_json(bcp_data)
                 allocations.append(
                     TallyBillAllocation(
                         ledger_name=ledger_name,
@@ -1466,9 +1572,7 @@ class TallyJSONParser:
             if v_data is None:
                 continue
             v: dict[str, object] = {}
-            parsed = TallyXMLParser.parse_date(
-                TallyJSONParser._get_val(v_data, "date")
-            )
+            parsed = TallyXMLParser.parse_date(TallyJSONParser._get_val(v_data, "date"))
             if parsed is not None:
                 v["date"] = parsed
             vt = TallyJSONParser._get_val(v_data, "vouchertypename")
@@ -1532,4 +1636,75 @@ class TallyJSONParser:
                             cess=cess,
                         )
                     )
+        return sections
+
+    @staticmethod
+    def parse_gstr1_json(data: dict[str, Any]) -> list["GSTR1Section"]:
+        """Parse a GSTR-1 JSON response into structured sections."""
+        from tallybridge.models.report import GSTR1Invoice, GSTR1Section
+
+        sections: list[GSTR1Section] = []
+        messages = TallyJSONParser._get_tally_messages(data)
+        for msg in messages:
+            for _key, obj in msg.items():
+                if not isinstance(obj, dict):
+                    continue
+                section_name = (
+                    TallyJSONParser._get_val(obj, "dspdispname")
+                    or TallyJSONParser._get_val(obj, "name")
+                    or ""
+                )
+                if not section_name:
+                    continue
+                invoices: list[GSTR1Invoice] = []
+                taxable = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "taxablevalue", "0")
+                )
+                igst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "integratedtax", "0")
+                )
+                cgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "centraltax", "0")
+                )
+                sgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "statetax", "0")
+                )
+                cess = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "cess", "0")
+                )
+                inv_number = TallyJSONParser._get_val(obj, "vouchernumber", "")
+                inv_date_str = TallyJSONParser._get_val(obj, "date", "")
+                inv_date = TallyXMLParser.parse_date(inv_date_str)
+                party_gstin = TallyJSONParser._get_val(obj, "partygstin", "")
+                party_name = TallyJSONParser._get_val(obj, "partyname", "")
+                place_of_supply = TallyJSONParser._get_val(obj, "placeofsupply", "")
+                supply_type = TallyJSONParser._get_val(obj, "supplytype", "")
+                if taxable or igst or cgst or sgst or cess:
+                    invoices.append(
+                        GSTR1Invoice(
+                            invoice_number=inv_number,
+                            invoice_date=inv_date,
+                            party_gstin=party_gstin,
+                            party_name=party_name,
+                            place_of_supply=place_of_supply,
+                            taxable_value=taxable,
+                            cgst=cgst,
+                            sgst=sgst,
+                            igst=igst,
+                            cess=cess,
+                            supply_type=supply_type,
+                        )
+                    )
+                sections.append(
+                    GSTR1Section(
+                        section=section_name,
+                        description=section_name,
+                        invoices=invoices,
+                        taxable_value=taxable,
+                        cgst=cgst,
+                        sgst=sgst,
+                        igst=igst,
+                        cess=cess,
+                    )
+                )
         return sections

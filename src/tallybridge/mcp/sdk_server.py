@@ -346,6 +346,23 @@ async def get_sync_errors(
     )
 
 
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_gstr1(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """GSTR-1 outward supply data — invoice-level sales details for GST filing."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_gstr1(
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
 def main() -> None:
     """Entry point for the tallybridge-mcp console script.
 

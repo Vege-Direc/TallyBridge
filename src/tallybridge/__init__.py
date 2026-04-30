@@ -19,6 +19,7 @@ from tallybridge.models.master import (
 )
 from tallybridge.models.report import (
     DailyDigest,
+    GSTR1Result,
     GSTR3BResult,
     ImportResult,
     OutstandingBill,
@@ -99,6 +100,7 @@ __all__ = [
     "SyncResult",
     "ImportResult",
     "GSTR3BResult",
+    "GSTR1Result",
     "TallyQuery",
     "TallyXMLParser",
     "TallyJSONParser",

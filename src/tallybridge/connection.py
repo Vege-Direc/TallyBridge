@@ -19,7 +19,12 @@ from tallybridge.config import TallyBridgeConfig
 from tallybridge.exceptions import TallyConnectionError, TallyDataError
 
 if TYPE_CHECKING:
-    from tallybridge.models.report import GSTR3BResult, ImportResult, TallyReport
+    from tallybridge.models.report import (
+        GSTR1Result,
+        GSTR3BResult,
+        ImportResult,
+        TallyReport,
+    )
     from tallybridge.version import TallyProduct
 
 
@@ -452,6 +457,67 @@ class TallyConnection:
             raw_response=raw_str,
         )
 
+    async def fetch_gstr1(
+        self,
+        from_date: str,
+        to_date: str,
+        company: str | None = None,
+    ) -> "GSTR1Result":
+        """Fetch GSTR-1 outward supply data from TallyPrime.
+
+        Uses the TYPE=Data report pattern with report name ``GSTR 1``.
+        Requires TallyPrime with GST features (4.0+ for Connected GST).
+        The response contains invoice-level outward supply details matching
+        the GST portal format.
+
+        Args:
+            from_date: Start date in ``YYYYMMDD`` format.
+            to_date: End date in ``YYYYMMDD`` format.
+            company: Company name (uses detected company if None).
+
+        Returns:
+            GSTR1Result with parsed sections or raw response on parse failure.
+        """
+        from tallybridge.models.report import GSTR1Result
+
+        raw = await self.fetch_report(
+            "GSTR 1",
+            from_date=from_date,
+            to_date=to_date,
+            company=company,
+        )
+
+        raw_str: str = ""
+        if isinstance(raw, dict):
+            import json
+
+            raw_str = json.dumps(raw)
+        elif isinstance(raw, str):
+            raw_str = raw
+
+        from datetime import datetime
+
+        parsed_from = datetime.strptime(from_date, "%Y%m%d").date()
+        parsed_to = datetime.strptime(to_date, "%Y%m%d").date()
+
+        if isinstance(raw, dict):
+            from tallybridge.parser import TallyJSONParser
+
+            sections = TallyJSONParser.parse_gstr1_json(raw)
+        elif isinstance(raw, str):
+            from tallybridge.parser import TallyXMLParser as _XMLParser
+
+            sections = _XMLParser.parse_gstr1(raw)
+        else:
+            sections = []
+
+        return GSTR1Result(
+            from_date=parsed_from,
+            to_date=parsed_to,
+            sections=sections,
+            raw_response=raw_str,
+        )
+
     @staticmethod
     def encode_name_base64(name: str) -> str:
         """Encode a multilingual entity name to base64 for TallyPrime 7.0+."""
@@ -530,9 +596,7 @@ class TallyConnection:
             logger.warning("Tally JSON connection failed: {}", exc)
             timeout_hint = ""
             if isinstance(exc, httpx.ReadTimeout):
-                timeout_hint = (
-                    " Read timeout. Try reducing VOUCHER_BATCH_SIZE."
-                )
+                timeout_hint = " Read timeout. Try reducing VOUCHER_BATCH_SIZE."
             raise TallyConnectionError(
                 f"Could not connect to Tally on "
                 f"{self._config.tally_host}:{self._config.tally_port}. "
@@ -747,9 +811,7 @@ class TallyConnection:
         safe_company = html.escape(company, quote=True) if company else ""
         static_vars = ""
         if safe_company:
-            static_vars = (
-                f"<SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>"
-            )
+            static_vars = f"<SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>"
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
@@ -786,9 +848,7 @@ class TallyConnection:
             headers["detailed-response"] = "Yes"
 
         sv_format_key = (
-            "svmstimportformat"
-            if import_id == "All Masters"
-            else "svvchimportformat"
+            "svmstimportformat" if import_id == "All Masters" else "svvchimportformat"
         )
         static_variables: dict[str, str] = {
             sv_format_key: import_format,
@@ -814,18 +874,10 @@ class TallyConnection:
         errors = 0
         error_messages: list[str] = []
 
-        created_match = re.search(
-            r"<CREATED>(\d+)</CREATED>", response, re.IGNORECASE
-        )
-        altered_match = re.search(
-            r"<ALTERED>(\d+)</ALTERED>", response, re.IGNORECASE
-        )
-        deleted_match = re.search(
-            r"<DELETED>(\d+)</DELETED>", response, re.IGNORECASE
-        )
-        errors_match = re.search(
-            r"<ERRORS>(\d+)</ERRORS>", response, re.IGNORECASE
-        )
+        created_match = re.search(r"<CREATED>(\d+)</CREATED>", response, re.IGNORECASE)
+        altered_match = re.search(r"<ALTERED>(\d+)</ALTERED>", response, re.IGNORECASE)
+        deleted_match = re.search(r"<DELETED>(\d+)</DELETED>", response, re.IGNORECASE)
+        errors_match = re.search(r"<ERRORS>(\d+)</ERRORS>", response, re.IGNORECASE)
 
         if created_match:
             created = int(created_match.group(1))
@@ -848,12 +900,8 @@ class TallyConnection:
             success = status_val >= 0
 
         if not success and not error_messages:
-            status_val_str = (
-                status_match.group(1) if status_match else "unknown"
-            )
-            error_messages.append(
-                f"Import failed with STATUS={status_val_str}"
-            )
+            status_val_str = status_match.group(1) if status_match else "unknown"
+            error_messages.append(f"Import failed with STATUS={status_val_str}")
 
         return ImportResult(
             success=success and errors == 0,
@@ -1081,10 +1129,12 @@ class TallyConnection:
         """
         entries = []
         for entry in ledger_entries:
-            entries.append({
-                "ledgername": entry.get("ledger_name", ""),
-                "amount": entry.get("amount", "0"),
-            })
+            entries.append(
+                {
+                    "ledgername": entry.get("ledger_name", ""),
+                    "amount": entry.get("amount", "0"),
+                }
+            )
 
         voucher: dict[str, Any] = {
             "vouchertype": voucher_type,

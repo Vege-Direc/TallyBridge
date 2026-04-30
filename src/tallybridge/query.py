@@ -8,6 +8,7 @@ from tallybridge.cache import TallyCache
 from tallybridge.models.master import TallyStockItem
 from tallybridge.models.report import (
     DailyDigest,
+    GSTR1Result,
     OutstandingBill,
     StockAgingLine,
     TrialBalanceLine,
@@ -678,3 +679,108 @@ class TallyQuery:
                 }
             )
         return result
+
+    def get_gstr1(self, from_date: date, to_date: date) -> GSTR1Result:
+        """Fetch GSTR-1 outward supply data from the local cache.
+
+        Constructs GSTR-1 sections from cached sales voucher data.
+        This is a cache-based reconstruction — for the full TallyPrime
+        GSTR-1 export with all portal sections, use
+        ``TallyConnection.fetch_gstr1()`` instead.
+        """
+        from decimal import Decimal
+
+        from tallybridge.models.report import GSTR1Invoice, GSTR1Section
+
+        rows = self._cache.query(
+            """SELECT v.voucher_number, v.date, v.party_gstin,
+                      v.party_ledger as party_name, v.place_of_supply,
+                      le.ledger_name, le.amount
+            FROM trn_voucher v
+            JOIN trn_ledger_entry le ON le.voucher_guid = v.guid
+            WHERE v.voucher_type IN ('Sales', 'Credit Note')
+            AND v.is_cancelled = false AND v.is_void = false
+            AND v.date BETWEEN ? AND ?
+            ORDER BY v.date, v.voucher_number""",
+            [str(from_date), str(to_date)],
+        )
+
+        b2b_invoices: list[GSTR1Invoice] = []
+        b2cs_invoices: list[GSTR1Invoice] = []
+        invoice_map: dict[str, GSTR1Invoice] = {}
+
+        for r in rows:
+            inv_num = str(r.get("voucher_number") or "")
+            if inv_num not in invoice_map:
+                inv_date = r.get("date")
+                if isinstance(inv_date, str):
+                    try:
+                        inv_date = date.fromisoformat(inv_date)
+                    except ValueError:
+                        inv_date = None
+                elif not isinstance(inv_date, date):
+                    inv_date = None
+                invoice_map[inv_num] = GSTR1Invoice(
+                    invoice_number=inv_num,
+                    invoice_date=inv_date,
+                    party_gstin=str(r.get("party_gstin") or ""),
+                    party_name=str(r.get("party_name") or ""),
+                    place_of_supply=str(r.get("place_of_supply") or ""),
+                )
+            inv = invoice_map[inv_num]
+            ledger_name = str(r.get("ledger_name") or "").upper()
+            amount = abs(Decimal(str(r.get("amount") or 0)))
+            if "CGST" in ledger_name:
+                inv.cgst += amount
+            elif "SGST" in ledger_name:
+                inv.sgst += amount
+            elif "IGST" in ledger_name:
+                inv.igst += amount
+            elif "CESS" in ledger_name:
+                inv.cess += amount
+            else:
+                inv.taxable_value += amount
+
+        for inv in invoice_map.values():
+            if inv.party_gstin:
+                b2b_invoices.append(inv)
+            else:
+                b2cs_invoices.append(inv)
+
+        sections: list[GSTR1Section] = []
+        if b2b_invoices:
+            sections.append(
+                GSTR1Section(
+                    section="B2B",
+                    description="B2B Invoices",
+                    invoices=b2b_invoices,
+                    taxable_value=sum(
+                        (i.taxable_value for i in b2b_invoices), Decimal("0")
+                    ),
+                    cgst=sum((i.cgst for i in b2b_invoices), Decimal("0")),
+                    sgst=sum((i.sgst for i in b2b_invoices), Decimal("0")),
+                    igst=sum((i.igst for i in b2b_invoices), Decimal("0")),
+                    cess=sum((i.cess for i in b2b_invoices), Decimal("0")),
+                )
+            )
+        if b2cs_invoices:
+            sections.append(
+                GSTR1Section(
+                    section="B2CS",
+                    description="B2C (Small)",
+                    invoices=b2cs_invoices,
+                    taxable_value=sum(
+                        (i.taxable_value for i in b2cs_invoices), Decimal("0")
+                    ),
+                    cgst=sum((i.cgst for i in b2cs_invoices), Decimal("0")),
+                    sgst=sum((i.sgst for i in b2cs_invoices), Decimal("0")),
+                    igst=sum((i.igst for i in b2cs_invoices), Decimal("0")),
+                    cess=sum((i.cess for i in b2cs_invoices), Decimal("0")),
+                )
+            )
+
+        return GSTR1Result(
+            from_date=from_date,
+            to_date=to_date,
+            sections=sections,
+        )

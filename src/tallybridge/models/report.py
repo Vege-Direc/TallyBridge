@@ -12,6 +12,7 @@ TallyReportType = Literal[
     "Trial Balance",
     "Day Book",
     "GSTR-3B",
+    "GSTR-1",
     "Unknown",
 ]
 
@@ -122,4 +123,46 @@ class GSTR3BResult(BaseModel):
     to_date: date | None = None
     gstin: str = ""
     sections: list[GSTR3BSection] = []
+    raw_response: str = ""
+
+
+class GSTR1Invoice(BaseModel):
+    """A single invoice within a GSTR-1 section."""
+
+    invoice_number: str = ""
+    invoice_date: date | None = None
+    party_gstin: str = ""
+    party_name: str = ""
+    place_of_supply: str = ""
+    reverse_charge: bool = False
+    invoice_type: str = ""
+    taxable_value: Decimal = Decimal("0")
+    cgst: Decimal = Decimal("0")
+    sgst: Decimal = Decimal("0")
+    igst: Decimal = Decimal("0")
+    cess: Decimal = Decimal("0")
+    hsn_code: str = ""
+    supply_type: str = ""
+
+
+class GSTR1Section(BaseModel):
+    """One section of the GSTR-1 return (B2B, B2CL, B2CS, CDNR, CDNUR, HSN, etc.)."""
+
+    section: str
+    description: str = ""
+    invoices: list[GSTR1Invoice] = []
+    taxable_value: Decimal = Decimal("0")
+    cgst: Decimal = Decimal("0")
+    sgst: Decimal = Decimal("0")
+    igst: Decimal = Decimal("0")
+    cess: Decimal = Decimal("0")
+
+
+class GSTR1Result(BaseModel):
+    """Parsed GSTR-1 return data from TallyPrime."""
+
+    from_date: date | None = None
+    to_date: date | None = None
+    gstin: str = ""
+    sections: list[GSTR1Section] = []
     raw_response: str = ""

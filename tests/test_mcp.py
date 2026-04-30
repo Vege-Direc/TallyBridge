@@ -488,11 +488,11 @@ def test_query_custom_limit(cache) -> None:
     assert isinstance(result, list)
 
 
-def test_mcp_server_has_17_tools() -> None:
+def test_mcp_server_has_18_tools() -> None:
     from tallybridge.mcp.sdk_server import mcp
 
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 17
+    assert len(tools) == 18
 
 
 def test_mcp_lifespan_creates_context() -> None:
