@@ -363,6 +363,51 @@ async def get_gstr1(
     )
 
 
+@mcp.tool(annotations=_ANNOTATIONS)
+async def reconcile_itc(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """ITC reconciliation — compare Tally purchases against GSTR-2A/2B data.
+
+    Matches purchase vouchers by supplier GSTIN + invoice number.
+    Returns counts of matched, mismatched, missing-in-Tally, missing-in-2A.
+    """
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.reconcile_itc(
+            from_date=_parse_date(from_date) or date_type.today(),
+            to_date=_parse_date(to_date) or date_type.today(),
+        )
+    )
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_gstr9(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """GSTR-9 annual return data — consolidated yearly GST return sections."""
+    from tallybridge.config import get_config as _get_config
+    from tallybridge.connection import TallyConnection
+
+    _cfg = _get_config()
+    conn = TallyConnection(_cfg)
+    try:
+        result = await conn.fetch_gstr9(
+            from_date=from_date,
+            to_date=to_date,
+            company=company,
+        )
+        return _serialize(result)
+    finally:
+        await conn.close()
+
+
 def main() -> None:
     """Entry point for the tallybridge-mcp console script.
 

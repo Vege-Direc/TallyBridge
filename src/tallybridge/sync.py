@@ -110,6 +110,9 @@ ENTITY_CONFIG: dict[str, dict[str, Any]] = {
             "ISOPTIONAL",
             "ISPOSTDATED",
             "ISVOID",
+            "CURRENCYNAME",
+            "FOREXAMOUNT",
+            "EXCHANGERATE",
         ],
     },
 }
@@ -647,9 +650,7 @@ class TallySyncEngine:
         result: list[Any] = parse_fn(xml_or_json)
         return result
 
-    def _parse_entity_json(
-        self, entity_type: str, data: dict[str, Any]
-    ) -> list[Any]:
+    def _parse_entity_json(self, entity_type: str, data: dict[str, Any]) -> list[Any]:
         from tallybridge.parser import TallyJSONParser
 
         json_parser = TallyJSONParser()

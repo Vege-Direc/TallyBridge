@@ -235,6 +235,14 @@ ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
         """ALTER TABLE mst_godown ADD COLUMN IF NOT EXISTS company TEXT;
 ALTER TABLE mst_godown ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
     ),
+    (
+        7,
+        "add currency fields to trn_voucher",
+        """ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS forex_amount DECIMAL(18,4);
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS exchange_rate DECIMAL(18,4);
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS base_currency_amount DECIMAL(18,4);""",
+    ),
 ]
 
 VIEWS_SQL = """
@@ -626,8 +634,9 @@ class TallyCache:
                      effective_date, reference, narration, party_ledger,
                      party_gstin, place_of_supply, due_date, entered_by,
                      is_cancelled, is_optional, is_postdated, is_void,
-                     total_amount, gst_amount, company)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     total_amount, gst_amount, company, currency,
+                     forex_amount, exchange_rate, base_currency_amount)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     [
                         voucher.guid,
                         voucher.alter_id,
@@ -649,6 +658,10 @@ class TallyCache:
                         voucher.total_amount,
                         voucher.gst_amount,
                         company,
+                        voucher.currency,
+                        voucher.forex_amount,
+                        voucher.exchange_rate,
+                        voucher.base_currency_amount,
                     ],
                 )
                 for le in voucher.ledger_entries:
@@ -1041,7 +1054,7 @@ class TallyCache:
                 columns = [desc[0] for desc in result.description]
                 rows = [
                     dict(zip(columns, row, strict=False)) for row in result.fetchall()
-]
+                ]
 
                 return rows
             finally:

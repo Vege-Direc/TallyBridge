@@ -1,7 +1,13 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 import tallybridge
+from tallybridge.cache import TallyCache
 from tallybridge.client import TallyBridge
+from tallybridge.config import TallyBridgeConfig
+from tallybridge.exceptions import TallyDataError
+from tallybridge.models.master import TallyGroup, TallyLedger, TallyVoucherType
 from tallybridge.models.report import ImportResult, SyncResult
 
 
@@ -114,7 +120,9 @@ async def test_tallybridge_create_ledger(tmp_path):
             )
             with patch("tallybridge.client.TallySyncEngine"):
                 bridge = TallyBridge(tallybridge.TallyBridgeConfig(db_path=db_path))
-                result = await bridge.create_ledger("New Customer", "Sundry Debtors")
+                result = await bridge.create_ledger(
+                    "New Customer", "Sundry Debtors", validate=False
+                )
                 assert result.success is True
                 assert result.created == 1
                 mock_conn.import_masters.assert_called_once()
@@ -134,7 +142,7 @@ async def test_tallybridge_create_voucher(tmp_path):
                 bridge = TallyBridge(tallybridge.TallyBridgeConfig(db_path=db_path))
                 entries = [{"ledger_name": "Cash", "amount": "5000"}]
                 result = await bridge.create_voucher(
-                    "Sales", "20250101", entries, narration="Test"
+                    "Sales", "20250101", entries, narration="Test", validate=False
                 )
                 assert result.success is True
                 mock_conn.import_vouchers.assert_called_once()
@@ -182,3 +190,179 @@ async def test_connection_context_manager():
     async with conn:
         pass
     conn._client.aclose.assert_called()
+
+
+def _make_bridge_with_db(tmp_path):
+    db_path = str(tmp_path / "validate.duckdb")
+    cache = TallyCache(db_path)
+    cache.upsert_groups(
+        [
+            TallyGroup(
+                guid="grp-sd",
+                alter_id=1,
+                name="Sundry Debtors",
+                parent="Current Assets",
+                primary_group="Assets",
+            ),
+            TallyGroup(
+                guid="grp-sc",
+                alter_id=2,
+                name="Sundry Creditors",
+                parent="Current Liabilities",
+                primary_group="Liabilities",
+            ),
+        ]
+    )
+    cache.upsert_ledgers(
+        [
+            TallyLedger(
+                guid="l1",
+                alter_id=1,
+                name="Cash",
+                parent_group="Cash-in-Hand",
+                closing_balance=0,
+            ),
+            TallyLedger(
+                guid="l2",
+                alter_id=2,
+                name="Sharma Trading Co",
+                parent_group="Sundry Debtors",
+                closing_balance=0,
+                gstin="27AABCS1429B1Z1",
+            ),
+            TallyLedger(
+                guid="l3",
+                alter_id=3,
+                name="Sales",
+                parent_group="Sales Accounts",
+                closing_balance=0,
+            ),
+            TallyLedger(
+                guid="l4",
+                alter_id=4,
+                name="Cash-in-Hand Ledger",
+                parent_group="Cash-in-Hand",
+                closing_balance=0,
+            ),
+        ]
+    )
+    cache.upsert_voucher_types(
+        [
+            TallyVoucherType(
+                guid="vt1", alter_id=1, name="Sales", parent="Accounting Vouchers"
+            ),
+        ]
+    )
+    with (
+        patch("tallybridge.client.TallyConnection"),
+        patch("tallybridge.client.TallySyncEngine"),
+    ):
+        bridge = TallyBridge(TallyBridgeConfig(db_path=db_path))
+    bridge._cache = cache
+    return bridge
+
+
+async def test_validate_voucher_balanced(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_voucher(
+        voucher_type="Sales",
+        date_str="20250401",
+        ledger_entries=[
+            {"ledger_name": "Sharma Trading Co", "amount": "5000"},
+            {"ledger_name": "Sales", "amount": "-5000"},
+        ],
+        party_ledger="Sharma Trading Co",
+    )
+    assert result.valid is True
+    assert result.errors == []
+
+
+async def test_validate_voucher_unbalanced(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_voucher(
+        voucher_type="Sales",
+        date_str="20250401",
+        ledger_entries=[
+            {"ledger_name": "Sharma Trading Co", "amount": "5000"},
+            {"ledger_name": "Sales", "amount": "-3000"},
+        ],
+    )
+    assert result.valid is False
+    assert any("Unbalanced" in e for e in result.errors)
+
+
+async def test_validate_voucher_missing_ledger(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_voucher(
+        voucher_type="Sales",
+        date_str="20250401",
+        ledger_entries=[
+            {"ledger_name": "NonExistent", "amount": "5000"},
+            {"ledger_name": "Sales", "amount": "-5000"},
+        ],
+    )
+    assert result.valid is False
+    assert any("NonExistent" in e for e in result.errors)
+
+
+async def test_validate_voucher_wrong_party_group(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_voucher(
+        voucher_type="Sales",
+        date_str="20250401",
+        ledger_entries=[
+            {"ledger_name": "Cash", "amount": "5000"},
+            {"ledger_name": "Sales", "amount": "-5000"},
+        ],
+        party_ledger="Cash",
+    )
+    assert "Cash-in-Hand" in "".join(result.warnings)
+
+
+async def test_validate_ledger_new(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_ledger("New Customer", "Sundry Debtors")
+    assert result.valid is True
+    assert result.errors == []
+
+
+async def test_validate_ledger_duplicate(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_ledger("Cash", "Cash-in-Hand")
+    assert result.valid is False
+    assert any("already exists" in e for e in result.errors)
+
+
+async def test_validate_ledger_missing_group(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    result = await bridge.validate_ledger("New Ledger", "NonExistent Group")
+    assert result.valid is False
+    assert any("NonExistent Group" in e for e in result.errors)
+
+
+async def test_create_voucher_with_validation(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    with patch.object(bridge._connection, "import_vouchers", new_callable=AsyncMock):
+        with pytest.raises(TallyDataError, match="Voucher validation failed"):
+            await bridge.create_voucher(
+                "Sales",
+                "20250401",
+                [{"ledger_name": "Missing", "amount": "5000"}],
+            )
+
+
+async def test_create_voucher_skip_validation(tmp_path):
+    bridge = _make_bridge_with_db(tmp_path)
+    with patch.object(
+        bridge._connection,
+        "import_vouchers",
+        new_callable=AsyncMock,
+        return_value=ImportResult(success=True, created=1),
+    ):
+        result = await bridge.create_voucher(
+            "Sales",
+            "20250401",
+            [{"ledger_name": "Missing", "amount": "5000"}],
+            validate=False,
+        )
+        assert result.success is True

@@ -444,3 +444,79 @@ def test_get_stock_item_account(tally_query: TallyQuery) -> None:
     for r in result:
         assert "inward_qty" in r
         assert "outward_qty" in r
+
+
+def test_reconcile_itc_matched(tally_query: TallyQuery) -> None:
+    from tallybridge.models.report import GSTR2AClaim
+
+    claims = [
+        GSTR2AClaim(
+            supplier_gstin="27AAACM2850K1Z1",
+            supplier_name="Mehta Suppliers",
+            invoice_number="PI/001/25",
+            taxable_value=Decimal("42000"),
+            cgst=Decimal("3780"),
+            sgst=Decimal("3780"),
+            itc_available=Decimal("7560"),
+        )
+    ]
+    result = tally_query.reconcile_itc(
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+        gstr2a_claims=claims,
+    )
+    assert result.total_2a_claims == 1
+    assert result.matched >= 1 or result.mismatched >= 1
+
+
+def test_reconcile_itc_mismatched(tally_query: TallyQuery) -> None:
+    from tallybridge.models.report import GSTR2AClaim
+
+    claims = [
+        GSTR2AClaim(
+            supplier_gstin="27AAACM2850K1Z1",
+            supplier_name="Mehta Suppliers",
+            invoice_number="PI/001/25",
+            taxable_value=Decimal("999999"),
+            cgst=Decimal("99999"),
+            sgst=Decimal("99999"),
+            itc_available=Decimal("199998"),
+        )
+    ]
+    result = tally_query.reconcile_itc(
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+        gstr2a_claims=claims,
+    )
+    assert result.mismatched >= 1
+    assert len(result.mismatches) >= 1
+
+
+def test_reconcile_itc_missing_in_tally(tally_query: TallyQuery) -> None:
+    from tallybridge.models.report import GSTR2AClaim
+
+    claims = [
+        GSTR2AClaim(
+            supplier_gstin="99XXXXXXXXX1Z1",
+            supplier_name="Unknown Supplier",
+            invoice_number="UNK/001/25",
+            taxable_value=Decimal("10000"),
+            igst=Decimal("1800"),
+            itc_available=Decimal("1800"),
+        )
+    ]
+    result = tally_query.reconcile_itc(
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+        gstr2a_claims=claims,
+    )
+    assert result.missing_in_tally >= 1
+
+
+def test_reconcile_itc_missing_in_2a(tally_query: TallyQuery) -> None:
+    result = tally_query.reconcile_itc(
+        from_date=date(2025, 1, 1),
+        to_date=date(2025, 12, 31),
+        gstr2a_claims=[],
+    )
+    assert result.missing_in_2a >= 1

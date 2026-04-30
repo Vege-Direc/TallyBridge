@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 if TYPE_CHECKING:
-    from tallybridge.models.report import GSTR1Section, GSTR3BSection
+    from tallybridge.models.report import (
+        GSTR1Section,
+        GSTR2AClaim,
+        GSTR3BSection,
+        GSTR9Section,
+    )
 
 from tallybridge.models.master import (
     TallyCostCenter,
@@ -81,6 +86,16 @@ class TallyXMLParser:
         except (InvalidOperation, ValueError) as exc:
             logger.warning("Failed to parse amount '{}': {}", amount_str, exc)
             return Decimal("0")
+
+    @staticmethod
+    def _parse_optional_amount(amount_str: str | None) -> Decimal | None:
+        """Parse optional amount string. Returns None if empty/missing."""
+        if not amount_str or not amount_str.strip():
+            return None
+        result = TallyXMLParser.parse_amount(amount_str)
+        if result == Decimal("0"):
+            return None
+        return result
 
     @staticmethod
     def parse_date(date_str: str | None) -> date | None:
@@ -391,6 +406,13 @@ class TallyXMLParser:
                     bill_allocations=bill_allocations,
                     total_amount=abs(total_amount),
                     gst_amount=abs(gst_amount),
+                    currency=self.get_text(elem, "CURRENCYNAME") or None,
+                    forex_amount=self._parse_optional_amount(
+                        self.get_text(elem, "FOREXAMOUNT")
+                    ),
+                    exchange_rate=self._parse_optional_amount(
+                        self.get_text(elem, "EXCHANGERATE")
+                    ),
                 )
                 vouchers.append(voucher)
             except Exception as exc:
@@ -440,7 +462,19 @@ class TallyXMLParser:
             amount = self.parse_amount(amount_text)
             if amount == Decimal("0"):
                 amount = self._parse_complex_amount(entry, "AMOUNT")
-            entries.append(TallyVoucherEntry(ledger_name=name, amount=amount))
+            entries.append(
+                TallyVoucherEntry(
+                    ledger_name=name,
+                    amount=amount,
+                    currency=self.get_text(entry, "CURRENCYNAME") or None,
+                    forex_amount=TallyXMLParser._parse_optional_amount(
+                        self.get_text(entry, "FOREXAMOUNT")
+                    ),
+                    exchange_rate=TallyXMLParser._parse_optional_amount(
+                        self.get_text(entry, "EXCHANGERATE")
+                    ),
+                )
+            )
         return entries
 
     def _parse_inventory_entries(
@@ -1021,6 +1055,149 @@ class TallyXMLParser:
         _flush_section()
         return sections
 
+    @staticmethod
+    def parse_gstr2a(xml_str: str) -> list[GSTR2AClaim]:
+        """Parse a GSTR-2A TYPE=Data XML response into ITC claim lines."""
+        from tallybridge.models.report import GSTR2AClaim
+
+        claims: list[GSTR2AClaim] = []
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            return claims
+
+        for elem in root.iter():
+            tag = elem.tag.upper()
+            if tag == "DSPACCINFO":
+                supplier_gstin = ""
+                supplier_name = ""
+                inv_number = ""
+                inv_date: date | None = None
+                taxable = Decimal("0")
+                cgst = Decimal("0")
+                sgst = Decimal("0")
+                igst = Decimal("0")
+                cess = Decimal("0")
+                itc_available = Decimal("0")
+                supply_type = ""
+                for sub in elem.iter():
+                    stag = sub.tag.upper()
+                    if stag == "PARTYGSTIN" and sub.text:
+                        supplier_gstin = sub.text.strip()
+                    elif stag in ("PARTYNAME", "PARTYLEDGERNAME") and sub.text:
+                        supplier_name = sub.text.strip()
+                    elif stag == "VOUCHERNUMBER" and sub.text:
+                        inv_number = sub.text.strip()
+                    elif stag == "DATE" and sub.text:
+                        inv_date = TallyXMLParser.parse_date(sub.text.strip())
+                    elif "TAXABLE" in stag and sub.text:
+                        taxable = TallyXMLParser.parse_amount(sub.text)
+                    elif "CGST" in stag and sub.text:
+                        cgst = TallyXMLParser.parse_amount(sub.text)
+                    elif ("SGST" in stag or "SCTAX" in stag) and sub.text:
+                        sgst = TallyXMLParser.parse_amount(sub.text)
+                    elif "IGST" in stag and sub.text:
+                        igst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CESS" in stag and sub.text:
+                        cess = TallyXMLParser.parse_amount(sub.text)
+                    elif "ITC" in stag and sub.text:
+                        itc_available = TallyXMLParser.parse_amount(sub.text)
+                    elif stag == "SUPPLYTYPE" and sub.text:
+                        supply_type = sub.text.strip()
+                if taxable or igst or cgst or sgst or cess:
+                    claims.append(
+                        GSTR2AClaim(
+                            supplier_gstin=supplier_gstin,
+                            supplier_name=supplier_name,
+                            invoice_number=inv_number,
+                            invoice_date=inv_date,
+                            taxable_value=taxable,
+                            cgst=cgst,
+                            sgst=sgst,
+                            igst=igst,
+                            cess=cess,
+                            itc_available=itc_available,
+                            supply_type=supply_type,
+                        )
+                    )
+        return claims
+
+    @staticmethod
+    def parse_gstr9(xml_str: str) -> list[GSTR9Section]:
+        """Parse a GSTR-9 TYPE=Data XML response into annual return sections."""
+        from tallybridge.models.report import GSTR9Section
+
+        sections: list[GSTR9Section] = []
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            return sections
+
+        current_section_name = ""
+        section_taxable = Decimal("0")
+        section_igst = Decimal("0")
+        section_cgst = Decimal("0")
+        section_sgst = Decimal("0")
+        section_cess = Decimal("0")
+
+        def _flush_section() -> None:
+            nonlocal current_section_name
+            nonlocal section_taxable, section_cgst
+            nonlocal section_sgst, section_igst, section_cess
+            if not current_section_name:
+                return
+            sections.append(
+                GSTR9Section(
+                    section=current_section_name,
+                    description=current_section_name,
+                    taxable_value=section_taxable,
+                    integrated_tax=section_igst,
+                    central_tax=section_cgst,
+                    state_tax=section_sgst,
+                    cess=section_cess,
+                )
+            )
+            current_section_name = ""
+            section_taxable = Decimal("0")
+            section_cgst = Decimal("0")
+            section_sgst = Decimal("0")
+            section_igst = Decimal("0")
+            section_cess = Decimal("0")
+
+        for elem in root.iter():
+            tag = elem.tag.upper()
+            if tag == "DSPDISPNAME" and elem.text:
+                name = elem.text.strip()
+                if name and not name.startswith("-"):
+                    _flush_section()
+                    current_section_name = name
+            elif tag == "DSPACCINFO" and current_section_name:
+                taxable = Decimal("0")
+                igst = Decimal("0")
+                cgst = Decimal("0")
+                sgst = Decimal("0")
+                cess = Decimal("0")
+                for sub in elem.iter():
+                    stag = sub.tag.upper()
+                    if "TAXABLE" in stag and sub.text:
+                        taxable = TallyXMLParser.parse_amount(sub.text)
+                    elif "IGST" in stag and sub.text:
+                        igst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CGST" in stag and sub.text:
+                        cgst = TallyXMLParser.parse_amount(sub.text)
+                    elif ("SGST" in stag or "SCTAX" in stag) and sub.text:
+                        sgst = TallyXMLParser.parse_amount(sub.text)
+                    elif "CESS" in stag and sub.text:
+                        cess = TallyXMLParser.parse_amount(sub.text)
+                section_taxable += taxable
+                section_cgst += cgst
+                section_sgst += sgst
+                section_igst += igst
+                section_cess += cess
+
+        _flush_section()
+        return sections
+
 
 class TallyJSONParser:
     """Parse TallyPrime 7.0+ JSONEx responses into the same Pydantic models.
@@ -1318,6 +1495,13 @@ class TallyJSONParser:
                     bill_allocations=bill_allocations,
                     total_amount=abs(total_amount),
                     gst_amount=abs(gst_amount),
+                    currency=self._get_val(v_data, "currencyname") or None,
+                    forex_amount=TallyXMLParser._parse_optional_amount(
+                        self._get_val(v_data, "forexamount")
+                    ),
+                    exchange_rate=TallyXMLParser._parse_optional_amount(
+                        self._get_val(v_data, "exchangerate")
+                    ),
                 )
                 vouchers.append(voucher)
             except Exception as exc:
@@ -1336,7 +1520,19 @@ class TallyJSONParser:
         for entry in raw_entries:
             name = self._get_val(entry, "ledgername")
             amount = TallyXMLParser.parse_amount(self._get_val(entry, "amount"))
-            entries.append(TallyVoucherEntry(ledger_name=name, amount=amount))
+            entries.append(
+                TallyVoucherEntry(
+                    ledger_name=name,
+                    amount=amount,
+                    currency=self._get_val(entry, "currencyname") or None,
+                    forex_amount=TallyXMLParser._parse_optional_amount(
+                        self._get_val(entry, "forexamount")
+                    ),
+                    exchange_rate=TallyXMLParser._parse_optional_amount(
+                        self._get_val(entry, "exchangerate")
+                    ),
+                )
+            )
         return entries
 
     def _parse_inventory_entries_json(
@@ -1679,6 +1875,105 @@ class TallyJSONParser:
                         )
                     )
         return sections
+
+    @staticmethod
+    def parse_gstr9_json(data: dict[str, Any]) -> list[GSTR9Section]:
+        """Parse a GSTR-9 JSON response into annual return sections."""
+        from tallybridge.models.report import GSTR9Section
+
+        sections: list[GSTR9Section] = []
+        messages = TallyJSONParser._get_tally_messages(data)
+        for msg in messages:
+            for _key, obj in msg.items():
+                if not isinstance(obj, dict):
+                    continue
+                section_name = (
+                    TallyJSONParser._get_val(obj, "dspdispname")
+                    or TallyJSONParser._get_val(obj, "name")
+                    or ""
+                )
+                if not section_name:
+                    continue
+                taxable = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "taxablevalue", "0")
+                )
+                igst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "integratedtax", "0")
+                )
+                cgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "centraltax", "0")
+                )
+                sgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "statetax", "0")
+                )
+                cess = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "cess", "0")
+                )
+                sections.append(
+                    GSTR9Section(
+                        section=section_name,
+                        description=section_name,
+                        taxable_value=taxable,
+                        integrated_tax=igst,
+                        central_tax=cgst,
+                        state_tax=sgst,
+                        cess=cess,
+                    )
+                )
+        return sections
+
+    @staticmethod
+    def parse_gstr2a_json(data: dict[str, Any]) -> list[GSTR2AClaim]:
+        """Parse a GSTR-2A JSON response into ITC claim lines."""
+        from tallybridge.models.report import GSTR2AClaim
+
+        claims: list[GSTR2AClaim] = []
+        messages = TallyJSONParser._get_tally_messages(data)
+        for msg in messages:
+            for _key, obj in msg.items():
+                if not isinstance(obj, dict):
+                    continue
+                supplier_gstin = TallyJSONParser._get_val(obj, "partygstin", "")
+                supplier_name = TallyJSONParser._get_val(obj, "partyname", "")
+                inv_number = TallyJSONParser._get_val(obj, "vouchernumber", "")
+                inv_date_str = TallyJSONParser._get_val(obj, "date", "")
+                inv_date = TallyXMLParser.parse_date(inv_date_str)
+                taxable = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "taxablevalue", "0")
+                )
+                igst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "integratedtax", "0")
+                )
+                cgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "centraltax", "0")
+                )
+                sgst = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "statetax", "0")
+                )
+                cess = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "cess", "0")
+                )
+                itc_available = TallyXMLParser.parse_amount(
+                    TallyJSONParser._get_val(obj, "itcavailable", "0")
+                )
+                supply_type = TallyJSONParser._get_val(obj, "supplytype", "")
+                if taxable or igst or cgst or sgst or cess:
+                    claims.append(
+                        GSTR2AClaim(
+                            supplier_gstin=supplier_gstin,
+                            supplier_name=supplier_name,
+                            invoice_number=inv_number,
+                            invoice_date=inv_date,
+                            taxable_value=taxable,
+                            cgst=cgst,
+                            sgst=sgst,
+                            igst=igst,
+                            cess=cess,
+                            itc_available=itc_available,
+                            supply_type=supply_type,
+                        )
+                    )
+        return claims
 
     @staticmethod
     def parse_gstr1_json(data: dict[str, Any]) -> list["GSTR1Section"]:

@@ -822,3 +822,32 @@ def test_v_receivables_view(db: TallyCache) -> None:
     ])
     result = db.query("SELECT * FROM v_receivables WHERE party_name = 'Customer X'")
     assert len(result) >= 1
+
+
+def test_upsert_voucher_with_currency(db: TallyCache) -> None:
+    voucher = TallyVoucher(
+        guid="v-fx",
+        alter_id=1,
+        voucher_number="FX/001",
+        voucher_type="Sales",
+        date=date(2025, 4, 1),
+        currency="USD",
+        forex_amount=Decimal("1000"),
+        exchange_rate=Decimal("83.25"),
+        base_currency_amount=Decimal("83250"),
+        ledger_entries=[
+            TallyVoucherEntry(
+                ledger_name="Bank USD",
+                amount=Decimal("83250"),
+                currency="USD",
+                forex_amount=Decimal("1000"),
+                exchange_rate=Decimal("83.25"),
+            )
+        ],
+    )
+    db.upsert_vouchers([voucher])
+    rows = db.query("SELECT * FROM trn_voucher WHERE guid = 'v-fx'")
+    assert len(rows) == 1
+    assert rows[0]["currency"] == "USD"
+    assert rows[0]["forex_amount"] == Decimal("1000")
+    assert rows[0]["exchange_rate"] == Decimal("83.25")

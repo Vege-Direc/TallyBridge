@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 class TallyVoucherEntry(BaseModel):
     ledger_name: str
     amount: Decimal
+    currency: str | None = None
+    forex_amount: Decimal | None = None
+    exchange_rate: Decimal | None = None
 
 
 class TallyInventoryEntry(BaseModel):
@@ -60,3 +63,7 @@ class TallyVoucher(BaseModel):
     bill_allocations: list[TallyBillAllocation] = Field(default_factory=list)
     total_amount: Decimal = Decimal("0")
     gst_amount: Decimal = Decimal("0")
+    currency: str | None = None
+    forex_amount: Decimal | None = None
+    exchange_rate: Decimal | None = None
+    base_currency_amount: Decimal | None = None

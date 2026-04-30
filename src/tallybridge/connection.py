@@ -21,7 +21,9 @@ from tallybridge.exceptions import TallyConnectionError, TallyDataError
 if TYPE_CHECKING:
     from tallybridge.models.report import (
         GSTR1Result,
+        GSTR2AClaim,
         GSTR3BResult,
+        GSTR9Result,
         ImportResult,
         TallyReport,
     )
@@ -512,6 +514,104 @@ class TallyConnection:
             sections = []
 
         return GSTR1Result(
+            from_date=parsed_from,
+            to_date=parsed_to,
+            sections=sections,
+            raw_response=raw_str,
+        )
+
+    async def fetch_gstr2a(
+        self,
+        from_date: str,
+        to_date: str,
+        company: str | None = None,
+    ) -> "list[GSTR2AClaim]":
+        """Fetch GSTR-2A auto-populated inward supply data from TallyPrime.
+
+        Uses the TYPE=Data report pattern with report name ``GSTR 2A``.
+        Requires TallyPrime with GST features and Connected GST enabled.
+        The response contains supplier-wise ITC claim data from the GST portal.
+
+        Args:
+            from_date: Start date in ``YYYYMMDD`` format.
+            to_date: End date in ``YYYYMMDD`` format.
+            company: Company name (uses detected company if None).
+
+        Returns:
+            List of GSTR2AClaim objects parsed from the Tally response.
+        """
+        raw = await self.fetch_report(
+            "GSTR 2A",
+            from_date=from_date,
+            to_date=to_date,
+            company=company,
+        )
+
+        if isinstance(raw, dict):
+            from tallybridge.parser import TallyJSONParser
+
+            return TallyJSONParser.parse_gstr2a_json(raw)
+        elif isinstance(raw, str):
+            from tallybridge.parser import TallyXMLParser as _XMLParser
+
+            return _XMLParser.parse_gstr2a(raw)
+        else:
+            return []
+
+    async def fetch_gstr9(
+        self,
+        from_date: str,
+        to_date: str,
+        company: str | None = None,
+    ) -> "GSTR9Result":
+        """Fetch GSTR-9 annual return data from TallyPrime.
+
+        Uses the TYPE=Data report pattern with report name ``GSTR 9``.
+        Requires TallyPrime with GST features. The response contains
+        annual return sections matching the GST portal format.
+
+        Args:
+            from_date: Start date in ``YYYYMMDD`` format.
+            to_date: End date in ``YYYYMMDD`` format.
+            company: Company name (uses detected company if None).
+
+        Returns:
+            GSTR9Result with parsed sections or raw response on parse failure.
+        """
+        from tallybridge.models.report import GSTR9Result
+
+        raw = await self.fetch_report(
+            "GSTR 9",
+            from_date=from_date,
+            to_date=to_date,
+            company=company,
+        )
+
+        raw_str: str = ""
+        if isinstance(raw, dict):
+            import json
+
+            raw_str = json.dumps(raw)
+        elif isinstance(raw, str):
+            raw_str = raw
+
+        from datetime import datetime
+
+        parsed_from = datetime.strptime(from_date, "%Y%m%d").date()
+        parsed_to = datetime.strptime(to_date, "%Y%m%d").date()
+
+        if isinstance(raw, dict):
+            from tallybridge.parser import TallyJSONParser
+
+            sections = TallyJSONParser.parse_gstr9_json(raw)
+        elif isinstance(raw, str):
+            from tallybridge.parser import TallyXMLParser as _XMLParser
+
+            sections = _XMLParser.parse_gstr9(raw)
+        else:
+            sections = []
+
+        return GSTR9Result(
             from_date=parsed_from,
             to_date=parsed_to,
             sections=sections,

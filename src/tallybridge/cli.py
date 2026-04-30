@@ -210,9 +210,7 @@ def mcp(
 @app.command()
 def serve(
     port: int = typer.Option(8080, "--port", "-p", help="HTTP port"),
-    host: str = typer.Option(
-        "127.0.0.1", "--host", "-h", help="Bind host"
-    ),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Bind host"),
 ) -> None:
     """Start read-only HTTP API bridge for BI tools."""
     try:
@@ -227,12 +225,9 @@ def serve(
     from tallybridge.serve import app as api_app
 
     console.print(
-        f"[bold green]Starting TallyBridge API on "
-        f"http://{host}:{port}[/bold green]"
+        f"[bold green]Starting TallyBridge API on http://{host}:{port}[/bold green]"
     )
-    console.print(
-        f"API docs: http://{host}:{port}/docs"
-    )
+    console.print(f"API docs: http://{host}:{port}/docs")
     console.print("Press Ctrl+C to stop")
     uvicorn.run(api_app, host=host, port=port)
 

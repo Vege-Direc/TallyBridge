@@ -1612,3 +1612,171 @@ class TestGSTR3BParser:
     def test_parse_gstr3b_json_empty(self) -> None:
         result = TallyJSONParser.parse_gstr3b_json({"data": {"tallymessage": []}})
         assert result == []
+
+
+class TestGSTR2AParser:
+    def test_parse_gstr2a_xml_empty(self) -> None:
+        result = TallyXMLParser.parse_gstr2a("")
+        assert result == []
+
+    def test_parse_gstr2a_xml_invalid(self) -> None:
+        result = TallyXMLParser.parse_gstr2a("not xml")
+        assert result == []
+
+    def test_parse_gstr2a_xml_with_claims(self) -> None:
+        xml = """<ENVELOPE>
+        <DSPACCINFO>
+            <PARTYGSTIN>27AABCS1429B1Z1</PARTYGSTIN>
+            <PARTYNAME>Sharma Trading Co</PARTYNAME>
+            <VOUCHERNUMBER>PI/001/25</VOUCHERNUMBER>
+            <DATE>20250403</DATE>
+            <TAXABLEVALUE>42000</TAXABLEVALUE>
+            <CGSTAMT>3780</CGSTAMT>
+            <SGSTAMT>3780</SGSTAMT>
+            <IGSTAMT>0</IGSTAMT>
+            <CESSAMT>0</CESSAMT>
+            <ITCAVAILABLE>7560</ITCAVAILABLE>
+            <SUPPLYTYPE>Regular</SUPPLYTYPE>
+        </DSPACCINFO>
+        </ENVELOPE>"""
+        result = TallyXMLParser.parse_gstr2a(xml)
+        assert len(result) == 1
+        assert result[0].supplier_gstin == "27AABCS1429B1Z1"
+        assert result[0].supplier_name == "Sharma Trading Co"
+        assert result[0].invoice_number == "PI/001/25"
+        assert result[0].taxable_value == Decimal("42000")
+        assert result[0].cgst == Decimal("3780")
+        assert result[0].sgst == Decimal("3780")
+        assert result[0].itc_available == Decimal("7560")
+
+    def test_parse_gstr2a_json_with_claims(self) -> None:
+        data = {
+            "data": {
+                "tallymessage": [
+                    {
+                        "gstr2a": {
+                            "partygstin": "27AAACM2850K1Z1",
+                            "partyname": "Mehta Suppliers",
+                            "vouchernumber": "PI/002/25",
+                            "date": "20250410",
+                            "taxablevalue": "30000",
+                            "centraltax": "2700",
+                            "statetax": "2700",
+                            "integratedtax": "0",
+                            "cess": "0",
+                            "itcavailable": "5400",
+                            "supplytype": "Regular",
+                        }
+                    }
+                ]
+            }
+        }
+        result = TallyJSONParser.parse_gstr2a_json(data)
+        assert len(result) == 1
+        assert result[0].supplier_gstin == "27AAACM2850K1Z1"
+        assert result[0].supplier_name == "Mehta Suppliers"
+        assert result[0].taxable_value == Decimal("30000")
+        assert result[0].itc_available == Decimal("5400")
+
+    def test_parse_gstr2a_json_empty(self) -> None:
+        result = TallyJSONParser.parse_gstr2a_json({"data": {"tallymessage": []}})
+        assert result == []
+
+
+class TestVoucherCurrencyParser:
+    def test_parse_voucher_with_currency(self) -> None:
+        xml = """<ENVELOPE><VOUCHER>
+        <GUID>g1</GUID><ALTERID>1</ALTERID>
+        <VOUCHERNUMBER>V/1</VOUCHERNUMBER>
+        <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+        <DATE>20250401</DATE>
+        <CURRENCYNAME>USD</CURRENCYNAME>
+        <FOREXAMOUNT>1000.00</FOREXAMOUNT>
+        <EXCHANGERATE>83.25</EXCHANGERATE>
+        </VOUCHER></ENVELOPE>"""
+        result = parser.parse_vouchers(xml)
+        assert len(result) == 1
+        assert result[0].currency == "USD"
+        assert result[0].forex_amount == Decimal("1000")
+
+    def test_parse_voucher_entry_forex(self) -> None:
+        xml = """<ENVELOPE><VOUCHER>
+        <GUID>g2</GUID><ALTERID>2</ALTERID>
+        <VOUCHERNUMBER>V/2</VOUCHERNUMBER>
+        <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+        <DATE>20250401</DATE>
+        <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>Bank USD</LEDGERNAME>
+            <AMOUNT>83250.00 Dr</AMOUNT>
+            <CURRENCYNAME>USD</CURRENCYNAME>
+            <FOREXAMOUNT>1000.00</FOREXAMOUNT>
+            <EXCHANGERATE>83.25</EXCHANGERATE>
+        </ALLLEDGERENTRIES.LIST>
+        </VOUCHER></ENVELOPE>"""
+        result = parser.parse_vouchers(xml)
+        assert len(result) == 1
+        assert len(result[0].ledger_entries) >= 1
+        entry = result[0].ledger_entries[0]
+        assert entry.currency == "USD"
+        assert entry.forex_amount == Decimal("1000")
+
+
+class TestGSTR9Parser:
+    def test_parse_gstr9_xml_empty(self) -> None:
+        result = TallyXMLParser.parse_gstr9("")
+        assert result == []
+
+    def test_parse_gstr9_xml_invalid(self) -> None:
+        result = TallyXMLParser.parse_gstr9("not xml")
+        assert result == []
+
+    def test_parse_gstr9_xml_with_sections(self) -> None:
+        xml = """<ENVELOPE>
+        <DSPDISPNAME>4. Taxable outward supplies</DSPDISPNAME>
+        <DSPACCINFO>
+            <TAXABLEVALUE>850000</TAXABLEVALUE>
+            <IGSTAMT>0</IGSTAMT>
+            <CGSTAMT>76500</CGSTAMT>
+            <SGSTAMT>76500</SGSTAMT>
+            <CESSAMT>0</CESSAMT>
+        </DSPACCINFO>
+        <DSPDISPNAME>5. Exempt supplies</DSPDISPNAME>
+        <DSPACCINFO>
+            <TAXABLEVALUE>50000</TAXABLEVALUE>
+            <IGSTAMT>0</IGSTAMT>
+            <CGSTAMT>0</CGSTAMT>
+            <SGSTAMT>0</SGSTAMT>
+            <CESSAMT>0</CESSAMT>
+        </DSPACCINFO>
+        </ENVELOPE>"""
+        result = TallyXMLParser.parse_gstr9(xml)
+        assert len(result) >= 1
+        assert result[0].section == "4. Taxable outward supplies"
+        assert result[0].taxable_value == Decimal("850000")
+        assert result[0].central_tax == Decimal("76500")
+
+    def test_parse_gstr9_json_with_sections(self) -> None:
+        data = {
+            "data": {
+                "tallymessage": [
+                    {
+                        "gstr9": {
+                            "dspdispname": "6. ITC availed",
+                            "taxablevalue": "420000",
+                            "integratedtax": "0",
+                            "centraltax": "37800",
+                            "statetax": "37800",
+                            "cess": "0",
+                        }
+                    }
+                ]
+            }
+        }
+        result = TallyJSONParser.parse_gstr9_json(data)
+        assert len(result) == 1
+        assert result[0].section == "6. ITC availed"
+        assert result[0].taxable_value == Decimal("420000")
+
+    def test_parse_gstr9_json_empty(self) -> None:
+        result = TallyJSONParser.parse_gstr9_json({"data": {"tallymessage": []}})
+        assert result == []

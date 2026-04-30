@@ -319,3 +319,48 @@ def test_voucher() -> None:
     TestVoucher().test_is_postdated_and_is_void_independent()
     TestVoucher().test_voucher_with_ledger_entries()
     TestVoucher().test_voucher_with_inventory_entries()
+
+
+def test_voucher_model_currency_fields() -> None:
+    v = TallyVoucher(
+        guid="g1",
+        alter_id=1,
+        voucher_number="V/1",
+        voucher_type="Sales",
+        date=date(2025, 4, 1),
+        currency="USD",
+        forex_amount=Decimal("1000"),
+        exchange_rate=Decimal("83.25"),
+        base_currency_amount=Decimal("83250"),
+    )
+    assert v.currency == "USD"
+    assert v.forex_amount == Decimal("1000")
+    assert v.exchange_rate == Decimal("83.25")
+    assert v.base_currency_amount == Decimal("83250")
+
+
+def test_voucher_entry_forex() -> None:
+    entry = TallyVoucherEntry(
+        ledger_name="Bank USD",
+        amount=Decimal("83250"),
+        currency="USD",
+        forex_amount=Decimal("1000"),
+        exchange_rate=Decimal("83.25"),
+    )
+    assert entry.currency == "USD"
+    assert entry.forex_amount == Decimal("1000")
+    assert entry.exchange_rate == Decimal("83.25")
+
+
+def test_voucher_currency_defaults_none() -> None:
+    v = TallyVoucher(
+        guid="g1",
+        alter_id=1,
+        voucher_number="V/1",
+        voucher_type="Sales",
+        date=date(2025, 4, 1),
+    )
+    assert v.currency is None
+    assert v.forex_amount is None
+    assert v.exchange_rate is None
+    assert v.base_currency_amount is None

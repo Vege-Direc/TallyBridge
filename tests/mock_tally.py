@@ -875,6 +875,45 @@ def setup_mock_routes(httpserver) -> None:
             resp_xml = build_cost_center_xml()
         elif ">Godown<" in xml_body:
             resp_xml = build_godown_xml()
+        elif "GSTR 2A" in xml_body:
+            resp_xml = (
+                "<ENVELOPE><BODY><DATA>"
+                "<DSPACCINFO>"
+                "<PARTYGSTIN>27AAACM2850K1Z1</PARTYGSTIN>"
+                "<PARTYNAME>Mehta Suppliers</PARTYNAME>"
+                "<VOUCHERNUMBER>PI/001/25</VOUCHERNUMBER>"
+                "<DATE>20250403</DATE>"
+                "<TAXABLEVALUE>42000</TAXABLEVALUE>"
+                "<CGSTAMT>3780</CGSTAMT>"
+                "<SGSTAMT>3780</SGSTAMT>"
+                "<IGSTAMT>0</IGSTAMT>"
+                "<CESSAMT>0</CESSAMT>"
+                "<ITCAVAILABLE>7560</ITCAVAILABLE>"
+                "<SUPPLYTYPE>Regular</SUPPLYTYPE>"
+                "</DSPACCINFO>"
+                "</DATA></BODY></ENVELOPE>"
+            )
+        elif "GSTR 9" in xml_body:
+            resp_xml = (
+                "<ENVELOPE><BODY><DATA>"
+                "<DSPDISPNAME>4. Taxable outward supplies</DSPDISPNAME>"
+                "<DSPACCINFO>"
+                "<TAXABLEVALUE>850000</TAXABLEVALUE>"
+                "<IGSTAMT>0</IGSTAMT>"
+                "<CGSTAMT>76500</CGSTAMT>"
+                "<SGSTAMT>76500</SGSTAMT>"
+                "<CESSAMT>0</CESSAMT>"
+                "</DSPACCINFO>"
+                "<DSPDISPNAME>5. Exempt supplies</DSPDISPNAME>"
+                "<DSPACCINFO>"
+                "<TAXABLEVALUE>50000</TAXABLEVALUE>"
+                "<IGSTAMT>0</IGSTAMT>"
+                "<CGSTAMT>0</CGSTAMT>"
+                "<SGSTAMT>0</SGSTAMT>"
+                "<CESSAMT>0</CESSAMT>"
+                "</DSPACCINFO>"
+                "</DATA></BODY></ENVELOPE>"
+            )
         elif ">Voucher<" in xml_body:
             resp_xml = build_voucher_xml()
         elif "Import Data" in xml_body:
@@ -1015,7 +1054,28 @@ def setup_mock_routes(httpserver) -> None:
                     },
                 }
             else:
-                resp = {"status": "1", "data": {}}
+                resp = {
+                    "status": "1",
+                    "data": {
+                        "tallymessage": [
+                            {
+                                "gstr2a": {
+                                    "partygstin": "27AAACM2850K1Z1",
+                                    "partyname": "Mehta Suppliers",
+                                    "vouchernumber": "PI/001/25",
+                                    "date": "20250403",
+                                    "taxablevalue": "42000",
+                                    "centraltax": "3780",
+                                    "statetax": "3780",
+                                    "integratedtax": "0",
+                                    "cess": "0",
+                                    "itcavailable": "7560",
+                                    "supplytype": "Regular",
+                                }
+                            }
+                        ]
+                    },
+                }
         else:
             resp = {"status": "1", "data": {}}
 

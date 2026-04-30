@@ -10,6 +10,7 @@ from tallybridge.models.report import (
     DailyDigest,
     GSTR1Result,
     OutstandingBill,
+    ReconciliationResult,
     StockAgingLine,
     TrialBalanceLine,
 )
@@ -408,9 +409,7 @@ class TallyQuery:
             )
         return result
 
-    def get_godown_summary(
-        self, company: str | None = None
-    ) -> list[dict[str, Any]]:
+    def get_godown_summary(self, company: str | None = None) -> list[dict[str, Any]]:
         """Return all godowns with parent hierarchy."""
         sql = "SELECT guid, name, parent FROM mst_godown"
         params: list[str] = []
@@ -548,6 +547,16 @@ class TallyQuery:
             is_void=bool(r.get("is_void")),
             party_ledger=r.get("party_ledger"),
             total_amount=Decimal(str(r.get("total_amount") or 0)),
+            currency=r.get("currency"),
+            forex_amount=Decimal(str(r.get("forex_amount")))
+            if r.get("forex_amount") is not None
+            else None,
+            exchange_rate=Decimal(str(r.get("exchange_rate")))
+            if r.get("exchange_rate") is not None
+            else None,
+            base_currency_amount=Decimal(str(r.get("base_currency_amount")))
+            if r.get("base_currency_amount") is not None
+            else None,
         )
 
     def get_balance_sheet(self, to_date: date | None = None) -> list[dict[str, Any]]:
@@ -794,4 +803,137 @@ class TallyQuery:
             from_date=from_date,
             to_date=to_date,
             sections=sections,
+        )
+
+    def reconcile_itc(
+        self,
+        from_date: date,
+        to_date: date,
+        gstr2a_claims: list[Any] | None = None,
+    ) -> ReconciliationResult:
+        """Compare cached purchase vouchers against GSTR-2A/2B data.
+
+        Matches by supplier GSTIN + invoice number + date. If gstr2a_claims
+        is not provided, queries cached purchase vouchers only (returns
+        partial reconciliation).
+
+        Args:
+            from_date: Start date for purchase voucher range.
+            to_date: End date for purchase voucher range.
+            gstr2a_claims: Optional list of GSTR2AClaim objects from
+                ``TallyConnection.fetch_gstr2a()``.
+
+        Returns:
+            ReconciliationResult with matched/mismatched/missing counts.
+        """
+        from tallybridge.models.report import GSTR2AClaim
+
+        purchases = self._cache.query(
+            """SELECT v.voucher_number, v.date, v.party_ledger, v.party_gstin,
+                      v.total_amount,
+                      COALESCE(SUM(CASE WHEN le.ledger_name LIKE '%CGST%'
+                                  THEN ABS(le.amount) ELSE 0 END), 0) as cgst,
+                      COALESCE(SUM(CASE WHEN le.ledger_name LIKE '%SGST%'
+                                  THEN ABS(le.amount) ELSE 0 END) , 0) as sgst,
+                      COALESCE(SUM(CASE WHEN le.ledger_name LIKE '%IGST%'
+                                  THEN ABS(le.amount) ELSE 0 END), 0) as igst
+            FROM trn_voucher v
+            LEFT JOIN trn_ledger_entry le ON le.voucher_guid = v.guid
+            WHERE v.voucher_type = 'Purchase'
+            AND v.is_cancelled = false AND v.is_void = false
+            AND v.date BETWEEN ? AND ?
+            GROUP BY v.guid, v.voucher_number, v.date, v.party_ledger,
+                     v.party_gstin, v.total_amount""",
+            [str(from_date), str(to_date)],
+        )
+
+        if gstr2a_claims is None:
+            gstr2a_claims = []
+
+        tally_by_full: dict[str, dict[str, Any]] = {}
+        tally_by_vnum: dict[str, dict[str, Any]] = {}
+        for p in purchases:
+            gstin = str(p.get("party_gstin") or "")
+            vnum = str(p.get("voucher_number") or "")
+            tally_by_full[f"{gstin}|{vnum}"] = p
+            if vnum:
+                tally_by_vnum[vnum] = p
+
+        claims_map: dict[str, GSTR2AClaim] = {}
+        for claim in gstr2a_claims:
+            key = f"{claim.supplier_gstin}|{claim.invoice_number}"
+            claims_map[key] = claim
+
+        matched = 0
+        mismatched = 0
+        missing_in_tally = 0
+        missing_in_2a = 0
+        itc_claimed = Decimal("0")
+        itc_available = Decimal("0")
+        mismatches: list[dict[str, Any]] = []
+        matched_tally_keys: set[str] = set()
+
+        for key, claim in claims_map.items():
+            itc_available += claim.itc_available
+            tally_p = tally_by_full.get(key)
+            if tally_p is None and claim.invoice_number:
+                tally_p = tally_by_vnum.get(claim.invoice_number)
+            if tally_p is not None:
+                p_gstin = str(tally_p.get("party_gstin") or "")
+                p_vnum = str(tally_p.get("voucher_number") or "")
+                tally_key = f"{p_gstin}|{p_vnum}"
+                matched_tally_keys.add(tally_key)
+                tally_total = Decimal(str(tally_p.get("total_amount") or 0))
+                tally_cgst = Decimal(str(tally_p.get("cgst") or 0))
+                tally_sgst = Decimal(str(tally_p.get("sgst") or 0))
+                tally_igst = Decimal(str(tally_p.get("igst") or 0))
+                tally_tax = tally_cgst + tally_sgst + tally_igst
+                claim_tax = claim.cgst + claim.sgst + claim.igst
+                if abs(tally_total - claim.taxable_value) <= Decimal("1") and abs(
+                    tally_tax - claim_tax
+                ) <= Decimal("1"):
+                    matched += 1
+                    itc_claimed += claim.itc_available
+                else:
+                    mismatched += 1
+                    mismatches.append(
+                        {
+                            "supplier_gstin": claim.supplier_gstin,
+                            "invoice_number": claim.invoice_number,
+                            "tally_amount": str(tally_total),
+                            "gstr2a_amount": str(claim.taxable_value),
+                            "tally_tax": str(tally_tax),
+                            "gstr2a_tax": str(claim_tax),
+                        }
+                    )
+            else:
+                missing_in_tally += 1
+                mismatches.append(
+                    {
+                        "supplier_gstin": claim.supplier_gstin,
+                        "invoice_number": claim.invoice_number,
+                        "issue": "Present in GSTR-2A but not in Tally",
+                    }
+                )
+
+        for key, p in tally_by_full.items():
+            if key not in matched_tally_keys and key not in claims_map:
+                missing_in_2a += 1
+                mismatches.append(
+                    {
+                        "supplier_gstin": str(p.get("party_gstin") or ""),
+                        "invoice_number": str(p.get("voucher_number") or ""),
+                        "issue": "Present in Tally but not in GSTR-2A",
+                    }
+                )
+
+        return ReconciliationResult(
+            total_2a_claims=len(gstr2a_claims),
+            matched=matched,
+            mismatched=mismatched,
+            missing_in_tally=missing_in_tally,
+            missing_in_2a=missing_in_2a,
+            itc_claimed=itc_claimed,
+            itc_available=itc_available,
+            mismatches=mismatches,
         )

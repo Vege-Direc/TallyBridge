@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -13,6 +13,8 @@ TallyReportType = Literal[
     "Day Book",
     "GSTR-3B",
     "GSTR-1",
+    "GSTR-2A",
+    "GSTR-9",
     "Unknown",
 ]
 
@@ -126,6 +128,43 @@ class GSTR3BResult(BaseModel):
     raw_response: str = ""
 
 
+class ValidationResult(BaseModel):
+    """Result of pre-write validation."""
+
+    valid: bool = True
+    errors: list[str] = []
+    warnings: list[str] = []
+
+
+class GSTR2AClaim(BaseModel):
+    """One ITC claim line from GSTR-2A/2B."""
+
+    supplier_gstin: str = ""
+    supplier_name: str = ""
+    invoice_number: str = ""
+    invoice_date: date | None = None
+    taxable_value: Decimal = Decimal("0")
+    cgst: Decimal = Decimal("0")
+    sgst: Decimal = Decimal("0")
+    igst: Decimal = Decimal("0")
+    cess: Decimal = Decimal("0")
+    itc_available: Decimal = Decimal("0")
+    supply_type: str = ""
+
+
+class ReconciliationResult(BaseModel):
+    """Result of ITC reconciliation."""
+
+    total_2a_claims: int = 0
+    matched: int = 0
+    mismatched: int = 0
+    missing_in_tally: int = 0
+    missing_in_2a: int = 0
+    itc_claimed: Decimal = Decimal("0")
+    itc_available: Decimal = Decimal("0")
+    mismatches: list[dict[str, Any]] = []
+
+
 class GSTR1Invoice(BaseModel):
     """A single invoice within a GSTR-1 section."""
 
@@ -165,4 +204,26 @@ class GSTR1Result(BaseModel):
     to_date: date | None = None
     gstin: str = ""
     sections: list[GSTR1Section] = []
+    raw_response: str = ""
+
+
+class GSTR9Section(BaseModel):
+    """One section of the GSTR-9 annual return."""
+
+    section: str
+    description: str = ""
+    taxable_value: Decimal = Decimal("0")
+    integrated_tax: Decimal = Decimal("0")
+    central_tax: Decimal = Decimal("0")
+    state_tax: Decimal = Decimal("0")
+    cess: Decimal = Decimal("0")
+
+
+class GSTR9Result(BaseModel):
+    """Parsed GSTR-9 annual return data from TallyPrime."""
+
+    from_date: date | None = None
+    to_date: date | None = None
+    gstin: str = ""
+    sections: list[GSTR9Section] = []
     raw_response: str = ""

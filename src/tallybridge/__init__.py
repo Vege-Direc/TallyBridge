@@ -21,12 +21,16 @@ from tallybridge.models.master import (
 from tallybridge.models.report import (
     DailyDigest,
     GSTR1Result,
+    GSTR2AClaim,
     GSTR3BResult,
+    GSTR9Result,
     ImportResult,
     OutstandingBill,
+    ReconciliationResult,
     StockAgingLine,
     SyncResult,
     TrialBalanceLine,
+    ValidationResult,
 )
 from tallybridge.models.voucher import TallyVoucher, TallyVoucherEntry
 from tallybridge.parser import TallyJSONParser, TallyXMLParser
@@ -120,6 +124,10 @@ __all__ = [
     "TallyDataError",
     "TallySyncError",
     "TallyBridgeCacheError",
+    "ValidationResult",
+    "GSTR2AClaim",
+    "ReconciliationResult",
+    "GSTR9Result",
     "TallyProduct",
     "detect_tally_version",
 ]

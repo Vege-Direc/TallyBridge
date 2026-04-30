@@ -895,3 +895,30 @@ async def test_fetch_gstr3b_json(json_conn: TallyConnection) -> None:
     assert result.from_date is not None
     assert isinstance(result.sections, list)
     assert result.raw_response != ""
+
+
+async def test_fetch_gstr2a(conn: TallyConnection) -> None:
+    result = await conn.fetch_gstr2a("20250101", "20250331")
+    assert isinstance(result, list)
+    if result:
+        assert result[0].supplier_gstin != ""
+
+
+async def test_fetch_gstr2a_json(json_conn: TallyConnection) -> None:
+    result = await json_conn.fetch_gstr2a("20250101", "20250331")
+    assert isinstance(result, list)
+    if result:
+        assert result[0].supplier_gstin != ""
+
+
+async def test_fetch_gstr9(conn: TallyConnection) -> None:
+    result = await conn.fetch_gstr9("20250101", "20250331")
+    assert result.from_date is not None
+    assert result.to_date is not None
+    assert isinstance(result.sections, list)
+
+
+async def test_fetch_gstr9_json(json_conn: TallyConnection) -> None:
+    result = await json_conn.fetch_gstr9("20250101", "20250331")
+    assert result.from_date is not None
+    assert isinstance(result.sections, list)
