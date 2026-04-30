@@ -235,7 +235,7 @@ class DataExporter:
         output_path: str | Path,
         columns: list[str] | None = None,
         where: str | None = None,
-        chunk_size: int = 10000,
+        chunk_size: int = 5000,
     ) -> int:
         """Export a cache table to CSV using chunked iteration.
 

@@ -346,13 +346,13 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_TALLY_EXPORT_FORMAT` | `auto` | Export format: `auto`, `xml`, or `json` |
 | `TALLYBRIDGE_DB_PATH` | `tallybridge.duckdb` | Local database file path |
 | `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
-| `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
+| `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–5000) |
 | `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error |
 | `TALLYBRIDGE_ALLOW_WRITES` | `false` | Enable write-back to TallyPrime |
 | `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport |
 | `TALLYBRIDGE_QUERY_CACHE_TTL` | `300` | Query result cache TTL in seconds |
 | `TALLYBRIDGE_SLOW_QUERY_THRESHOLD` | `1.0` | Log queries slower than this (seconds) |
-| `TALLYBRIDGE_EXPORT_CHUNK_SIZE` | `10000` | Rows per chunk for chunked export |
+| `TALLYBRIDGE_EXPORT_CHUNK_SIZE` | `5000` | Rows per chunk for chunked export |
 | `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
 
 Example `.env`:

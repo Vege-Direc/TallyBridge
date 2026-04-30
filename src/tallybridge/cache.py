@@ -872,7 +872,7 @@ class TallyCache:
             raise TallyBridgeCacheError(str(exc)) from exc
 
     def query_iter(
-        self, sql: str, params: list[Any] | None = None, chunk_size: int = 10000
+        self, sql: str, params: list[Any] | None = None, chunk_size: int = 5000
     ) -> Any:
         """Execute SELECT and yield rows in chunks for memory-efficient iteration.
 

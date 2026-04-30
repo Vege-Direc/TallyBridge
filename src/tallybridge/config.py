@@ -29,7 +29,7 @@ class TallyBridgeConfig(BaseSettings):
 
     query_cache_ttl: int = 300
     slow_query_threshold: float = 1.0
-    export_chunk_size: int = 10000
+    export_chunk_size: int = 5000
 
     model_config = SettingsConfigDict(
         env_prefix="TALLYBRIDGE_",
@@ -72,8 +72,8 @@ class TallyBridgeConfig(BaseSettings):
     @field_validator("voucher_batch_size")
     @classmethod
     def validate_voucher_batch_size(cls, v: int) -> int:
-        if not 100 <= v <= 10000:
-            raise ValueError("voucher_batch_size must be between 100 and 10000")
+        if not 100 <= v <= 5000:
+            raise ValueError("voucher_batch_size must be between 100 and 5000")
         return v
 
     async def validate_tally_connection(self) -> None:

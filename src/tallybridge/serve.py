@@ -116,7 +116,7 @@ async def list_views() -> ViewsResponse:
 @app.get("/views/{view_name}")
 async def query_view(
     view_name: str,
-    limit: int = Query(default=1000, ge=1, le=10000),
+    limit: int = Query(default=1000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
 ) -> QueryResponse:
     if view_name not in VIEW_DESCRIPTIONS:
@@ -164,7 +164,7 @@ async def execute_query(request: QueryRequest) -> QueryResponse:
         )
 
     if "LIMIT" not in sql.upper():
-        sql += " LIMIT 10000"
+        sql += " LIMIT 5000"
 
     cache = _get_cache()
     try:
