@@ -1,23 +1,21 @@
 # MCP Setup Guide
 
-## Configuring TallyBridge as an MCP Server for Claude Desktop
+Connect TallyBridge to AI assistants via the Model Context Protocol (MCP).
 
-TallyBridge includes an MCP (Model Context Protocol) server that allows AI assistants like Claude to query your Tally data directly.
-
-### Step 1: Install TallyBridge
+## Installation
 
 ```bash
 pip install tallybridge
 ```
 
-### Step 2: Configure Claude Desktop
+## Configure Claude Desktop
 
 Edit your Claude Desktop configuration file:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add the TallyBridge MCP server:
+### Basic (stdio)
 
 ```json
 {
@@ -34,7 +32,7 @@ Add the TallyBridge MCP server:
 }
 ```
 
-Or if using `uv` with a local clone:
+### Using uv with a local clone
 
 ```json
 {
@@ -52,7 +50,7 @@ Or if using `uv` with a local clone:
 }
 ```
 
-You can also use the CLI subcommand instead of the dedicated entry point:
+### Using the CLI subcommand
 
 ```json
 {
@@ -65,64 +63,7 @@ You can also use the CLI subcommand instead of the dedicated entry point:
 }
 ```
 
-### Step 3: Set Environment Variables
-
-You can set environment variables either in the `claude_desktop_config.json` `env` block (as shown above) or in a `.env` file in your project directory:
-
-```env
-TALLYBRIDGE_TALLY_HOST=localhost
-TALLYBRIDGE_TALLY_PORT=9000
-TALLYBRIDGE_TALLY_COMPANY=Your Company Name
-```
-
-### Step 4: Restart Claude Desktop
-
-After updating the configuration, fully quit and restart Claude Desktop for the changes to take effect.
-
-### Step 5: Verify the Connection
-
-In Claude Desktop, ask a question that triggers TallyBridge, for example:
-
-> "What were today's total sales in Tally?"
-
-If the MCP server is configured correctly, Claude will invoke the TallyBridge tools and return data from TallyPrime.
-
-### Available MCP Tools
-
-#### Query Tools (read-only)
-
-| Tool | Description |
-|---|---|
-| `get_tally_digest` | Complete business summary: sales, purchases, balances, overdue |
-| `get_ledger_balance` | Closing balance of any ledger |
-| `get_receivables` | Outstanding sales invoices |
-| `get_payables` | Outstanding purchase invoices |
-| `get_party_outstanding` | Full position with one party |
-| `get_sales_summary` | Sales by day/week/month/party |
-| `get_gst_summary` | GST collected, ITC, net liability |
-| `search_tally` | Search ledgers, parties, narrations |
-| `get_sync_status` | Last sync time and record counts |
-| `get_low_stock` | Items at or below quantity threshold |
-| `get_stock_aging` | How long stock has been sitting |
-| `get_cost_center_summary` | Income/expense by cost centre |
-| `get_balance_sheet` | Balance sheet grouped by assets/liabilities |
-| `get_profit_loss` | P&L grouped by income/expense |
-| `get_ledger_account` | Voucher-level general ledger |
-| `get_stock_item_account` | Quantity movements for a stock item |
-| `query_tally_data` | Run custom SQL on local cache |
-| `get_sync_errors` | List failed sync records |
-
-#### Import Tools (write-back, requires opt-in)
-
-These tools are only available when `TALLYBRIDGE_ALLOW_WRITES=true` is set in your environment. They allow AI assistants to create ledgers and vouchers in TallyPrime.
-
-| Tool | Description |
-|---|---|
-| `create_ledger` | Create a new ledger in TallyPrime (name, parent group, opening balance) |
-| `create_voucher` | Create a new voucher in TallyPrime (type, date, entries, narration) |
-| `cancel_voucher` | Cancel an existing voucher by GUID |
-
-To enable import tools, add to your Claude Desktop config:
+### With write-back enabled
 
 ```json
 {
@@ -141,11 +82,115 @@ To enable import tools, add to your Claude Desktop config:
 
 > **Warning:** Enabling write-back allows AI assistants to modify data in TallyPrime. Use with caution and review all import operations carefully.
 
-### Troubleshooting
+## Environment Variables
+
+You can set environment variables either in the `env` block of your config or in a `.env` file in your project directory:
+
+```env
+TALLYBRIDGE_TALLY_HOST=localhost
+TALLYBRIDGE_TALLY_PORT=9000
+TALLYBRIDGE_TALLY_COMPANY=Your Company Name
+```
+
+## Verify the Connection
+
+After updating the configuration, fully quit and restart Claude Desktop. Then ask a question that triggers TallyBridge:
+
+> "What were today's total sales in Tally?"
+
+If the MCP server is configured correctly, Claude will invoke the TallyBridge tools and return data from TallyPrime.
+
+## Available MCP Tools
+
+### Business Overview
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_tally_digest` | Complete business summary: sales, purchases, balances, overdue | `date` (optional) |
+| `get_sync_status` | Last sync time and record counts | — |
+| `get_sync_errors` | Recent sync errors with GUIDs and messages | `entity_type`, `limit` |
+
+### Ledger & Account
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_ledger_balance` | Closing balance of any ledger | `ledger_name` (required), `date` |
+| `get_party_outstanding` | Full receivable/payable position with one party | `party_name` (required) |
+| `get_balance_sheet` | Balance sheet grouped by assets/liabilities | `to_date` |
+| `get_profit_loss` | P&L grouped by income/expense | `from_date`, `to_date` |
+| `get_ledger_account` | Voucher-level general ledger | `ledger_name`, `from_date`, `to_date` |
+
+### Sales & Purchases
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_sales_summary` | Sales by day/week/month/party/item | `from_date`, `to_date`, `group_by` |
+| `get_receivables` | Outstanding sales invoices | `overdue_only`, `min_days_overdue` |
+| `get_payables` | Outstanding purchase invoices | `overdue_only` |
+
+### GST & Compliance
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_gst_summary` | GST collected, ITC, net liability | `from_date`, `to_date` |
+| `get_gstr1` | GSTR-1 outward supply data | `from_date`, `to_date` |
+| `reconcile_itc` | ITC reconciliation (GSTR-2A vs purchases) | `from_date`, `to_date` |
+| `get_gstr9` | GSTR-9 annual return data | `from_date`, `to_date` |
+| `get_einvoice_status` | E-invoice IRN coverage and missing invoices | `from_date`, `to_date` |
+| `get_eway_bill_status` | E-Way Bill active, expired, expiring | `from_date`, `to_date` |
+
+### Inventory
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_low_stock` | Items at or below quantity threshold | `threshold` |
+| `get_stock_aging` | Stock aging by day buckets | `date`, `bucket_days` |
+| `get_stock_item_account` | Quantity movements for a stock item | `item_name`, `from_date`, `to_date` |
+
+### Cost Centres
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `get_cost_center_summary` | Income/expense breakdown by cost centre | `from_date`, `to_date`, `cost_center_name` |
+
+### Data & Export
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `search_tally` | Search ledgers, parties, voucher narrations | `query`, `limit` |
+| `query_tally_data` | Run custom SQL on local cache (read-only) | `sql`, `limit` |
+| `export_data` | Export cached data as CSV or JSON string | `table`, `format`, `columns`, `where`, `limit` |
+| `get_audit_log` | Audit log of write operations | `from_date`, `to_date`, `entity_type`, `operation` |
+
+### Import / Write-Back (requires opt-in)
+
+> **Note:** Write tools are currently available via the Python API
+> (`TallyBridge` client class). MCP exposure is planned for a future release.
+> These tools require `TALLYBRIDGE_ALLOW_WRITES=true`.
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `create_ledger` | Create a new ledger in TallyPrime | `name`, `parent_group`, `opening_balance` |
+| `create_voucher` | Create a new voucher in TallyPrime | `voucher_type`, `date`, `entries`, `narration` |
+| `cancel_voucher` | Cancel an existing voucher | `guid` |
+
+## HTTP Transport
+
+For remote/cloud deployments, use HTTP transport with an API key:
+
+```bash
+TALLYBRIDGE_MCP_TRANSPORT=http TALLYBRIDGE_MCP_API_KEY=your-secret-key tallybridge-mcp
+```
+
+All HTTP requests must include `Authorization: Bearer your-secret-key`.
+
+## Troubleshooting
 
 | Problem | Solution |
 |---|---|
-| MCP server not found | Verify the `command` path is correct and `tallybridge-mcp` is on your PATH. |
-| Connection errors | Ensure TallyPrime is running with the HTTP server enabled on port 9000. See [tally-setup.md](tally-setup.md). |
-| Claude cannot see tools | Restart Claude Desktop after config changes. Check the `claude_desktop_config.json` syntax. |
+| MCP server not found | Verify `tallybridge-mcp` is on your PATH. Run `tallybridge-mcp --help` to check. |
+| Connection errors | Ensure TallyPrime is running with HTTP server enabled on port 9000. See [tally-setup.md](tally-setup.md). |
+| Claude cannot see tools | Restart Claude Desktop after config changes. Check `claude_desktop_config.json` syntax. |
 | Permission denied | On macOS/Linux, ensure the command is executable (`chmod +x`). |
+| HTTP auth failures | Verify the `Authorization: Bearer <key>` header matches your `TALLYBRIDGE_MCP_API_KEY`. |
+| Write tools not appearing | Set `TALLYBRIDGE_ALLOW_WRITES=true` in the `env` block. |

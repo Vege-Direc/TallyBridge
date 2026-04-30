@@ -4,6 +4,7 @@ import asyncio
 import platform
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -18,10 +19,22 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="Configuration commands")
 service_app = typer.Typer(help="Windows service management")
+export_app = typer.Typer(help="Data export commands")
 app.add_typer(config_app, name="config")
 app.add_typer(service_app, name="service")
+app.add_typer(export_app, name="export")
 
 console = Console()
+
+
+def _make_cache(cfg: TallyBridgeConfig) -> Any:
+    from tallybridge.cache import TallyCache
+
+    return TallyCache(
+        cfg.db_path,
+        cache_ttl=float(cfg.query_cache_ttl),
+        slow_threshold=cfg.slow_query_threshold,
+    )
 
 
 def _version_callback(value: bool) -> None:
@@ -85,9 +98,8 @@ def status() -> None:
     """Rich table: sync status per entity."""
     cfg = get_config()
     try:
-        from tallybridge.cache import TallyCache
 
-        cache = TallyCache(cfg.db_path)
+        cache = _make_cache(cfg)
         sync_status = cache.get_sync_status()
         health = cache.health_check()
 
@@ -122,12 +134,11 @@ def sync(
 ) -> None:
     """One-time sync now."""
     cfg = get_config()
-    from tallybridge.cache import TallyCache
     from tallybridge.connection import TallyConnection
     from tallybridge.parser import TallyXMLParser
     from tallybridge.sync import TallySyncEngine
 
-    cache = TallyCache(cfg.db_path)
+    cache = _make_cache(cfg)
     connection = TallyConnection(cfg)
     parser = TallyXMLParser()
     engine = TallySyncEngine(connection, cache, parser)
@@ -267,9 +278,8 @@ def doctor() -> None:
     sync_ok = False
     if db_exists:
         try:
-            from tallybridge.cache import TallyCache
 
-            cache = TallyCache(cfg.db_path)
+            cache = _make_cache(cfg)
             status = cache.get_sync_status()
             if status:
                 last_sync = list(status.values())[0].get("last_sync_at")
@@ -284,9 +294,8 @@ def doctor() -> None:
     has_data = False
     if db_exists:
         try:
-            from tallybridge.cache import TallyCache
 
-            cache = TallyCache(cfg.db_path)
+            cache = _make_cache(cfg)
             count = cache.query("SELECT COUNT(*) as cnt FROM mst_ledger")
             has_data = count[0]["cnt"] > 0 if count else False
             cache.close()
@@ -401,3 +410,132 @@ async def _ping_tally(cfg: TallyBridgeConfig) -> bool:
     result = await conn.ping()
     await conn.close()
     return result
+
+
+@export_app.command("csv")
+def export_csv(
+    table: str = typer.Argument(
+        help="Table name (e.g. ledgers, vouchers, stock_items)"
+    ),
+    output: str = typer.Option(
+        "output.csv", "--output", "-o", help="Output file path"
+    ),
+    where: str | None = typer.Option(None, "--where", "-w", help="SQL WHERE clause"),
+    limit: int | None = typer.Option(None, "--limit", "-l", help="Max rows"),
+) -> None:
+    """Export cache table to CSV."""
+    from tallybridge.export import DataExporter
+
+    cfg = get_config()
+    cache = _make_cache(cfg)
+    exporter = DataExporter(cache)
+    try:
+        count = exporter.export_csv(table, output, where=where, limit=limit)
+        console.print(f"[green]Exported {count} rows to {output}[/green]")
+    except Exception as exc:
+        console.print(f"[red]Export failed: {exc}[/red]")
+        raise typer.Exit(1) from None
+    finally:
+        cache.close()
+
+
+@export_app.command("excel")
+def export_excel(
+    output: str = typer.Argument(help="Output .xlsx file path"),
+    tables: str | None = typer.Option(
+        None, "--tables", "-t", help="Comma-separated table names"
+    ),
+) -> None:
+    """Export cache tables to Excel (one sheet per table)."""
+    from tallybridge.export import DataExporter
+
+    cfg = get_config()
+    cache = _make_cache(cfg)
+    exporter = DataExporter(cache)
+    table_list = tables.split(",") if tables else None
+    try:
+        result = exporter.export_excel(output, tables=table_list)
+        for tbl, count in result.items():
+            console.print(f"  {tbl}: {count} rows")
+        console.print(f"[green]Exported to {output}[/green]")
+    except ImportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    except Exception as exc:
+        console.print(f"[red]Export failed: {exc}[/red]")
+        raise typer.Exit(1) from None
+    finally:
+        cache.close()
+
+
+@export_app.command("json")
+def export_json(
+    table: str = typer.Argument(
+        help="Table name (e.g. ledgers, vouchers, stock_items)"
+    ),
+    output: str = typer.Option(
+        "output.json", "--output", "-o", help="Output file path"
+    ),
+    where: str | None = typer.Option(None, "--where", "-w", help="SQL WHERE clause"),
+    limit: int | None = typer.Option(None, "--limit", "-l", help="Max rows"),
+) -> None:
+    """Export cache table to JSON."""
+    from tallybridge.export import DataExporter
+
+    cfg = get_config()
+    cache = _make_cache(cfg)
+    exporter = DataExporter(cache)
+    try:
+        count = exporter.export_json(table, output, where=where, limit=limit)
+        console.print(f"[green]Exported {count} rows to {output}[/green]")
+    except Exception as exc:
+        console.print(f"[red]Export failed: {exc}[/red]")
+        raise typer.Exit(1) from None
+    finally:
+        cache.close()
+
+
+report_app = typer.Typer(help="Report generation commands")
+app.add_typer(report_app, name="report")
+
+
+@report_app.command("generate")
+def report_generate(
+    type: str = typer.Argument(
+        help="Report type: daily_digest, gst_summary, receivables, "
+        "payables, stock_summary, einvoice_summary"
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output file path"
+    ),
+    format: str = typer.Option(
+        "json", "--format", "-f", help="Output format: json, csv, html"
+    ),
+    date_val: str | None = typer.Option(
+        None, "--date", "-d", help="Report date (YYYY-MM-DD, default: today)"
+    ),
+) -> None:
+    """Generate a report from cached Tally data."""
+    from datetime import date as date_type
+
+    from tallybridge.query import TallyQuery
+    from tallybridge.reports import ReportScheduler
+
+    cfg = get_config()
+    cache = _make_cache(cfg)
+    query = TallyQuery(cache)
+    scheduler = ReportScheduler(cache, query)
+    try:
+        as_of = date_type.fromisoformat(date_val) if date_val else None
+        path = scheduler.generate_report(
+            report_type=type,  # type: ignore[arg-type]
+            as_of_date=as_of,
+            output_format=format,  # type: ignore[arg-type]
+            output_path=output,
+        )
+        console.print(f"[green]Report generated: {path}[/green]")
+    except Exception as exc:
+        console.print(f"[red]Report generation failed: {exc}[/red]")
+        raise typer.Exit(1) from None
+    finally:
+        cache.close()

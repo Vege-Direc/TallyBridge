@@ -851,3 +851,126 @@ def test_upsert_voucher_with_currency(db: TallyCache) -> None:
     assert rows[0]["currency"] == "USD"
     assert rows[0]["forex_amount"] == Decimal("1000")
     assert rows[0]["exchange_rate"] == Decimal("83.25")
+
+
+def test_log_audit_create(db: TallyCache) -> None:
+    db.log_audit(
+        operation="create",
+        entity_type="ledger",
+        entity_name="Test Ledger",
+        entity_guid="g-test",
+        details={"parent_group": "Sundry Debtors"},
+    )
+    rows = db.query("SELECT * FROM audit_log ORDER BY id DESC LIMIT 1")
+    assert len(rows) == 1
+    assert rows[0]["operation"] == "create"
+    assert rows[0]["entity_type"] == "ledger"
+    assert rows[0]["entity_name"] == "Test Ledger"
+    assert rows[0]["entity_guid"] == "g-test"
+    assert rows[0]["success"] is True
+
+
+def test_log_audit_failure(db: TallyCache) -> None:
+    db.log_audit(
+        operation="create",
+        entity_type="voucher",
+        entity_name="SI/001",
+        success=False,
+        details={"errors": ["Ledger not found"]},
+    )
+    rows = db.query("SELECT * FROM audit_log WHERE success = false")
+    assert len(rows) == 1
+    assert rows[0]["success"] is False
+
+
+def test_get_audit_log_filters(db: TallyCache) -> None:
+    db.log_audit(operation="create", entity_type="ledger", entity_name="A")
+    db.log_audit(operation="cancel", entity_type="voucher", entity_name="V1")
+    db.log_audit(operation="create", entity_type="voucher", entity_name="V2")
+
+    all_entries = db.get_audit_log(limit=10)
+    assert len(all_entries) == 3
+
+    voucher_entries = db.get_audit_log(entity_type="voucher", limit=10)
+    assert len(voucher_entries) == 2
+
+    create_entries = db.get_audit_log(operation="create", limit=10)
+    assert len(create_entries) == 2
+
+
+def test_audit_log_default_system_user(db: TallyCache) -> None:
+    db.log_audit(operation="import", entity_type="ledger")
+    rows = db.query("SELECT * FROM audit_log")
+    assert rows[0]["user_info"] == "system"
+
+
+def test_log_audit_non_blocking(db: TallyCache) -> None:
+    db.close()
+    db.log_audit(operation="create", entity_type="ledger")
+
+
+def test_query_cache_hits(db: TallyCache) -> None:
+    db.upsert_ledgers(
+        [TallyLedger(name="Cache1", guid="gc1", alter_id=1, parent_group="Test")]
+    )
+    db.clear_query_cache()
+    rows1 = db.query("SELECT * FROM mst_ledger WHERE guid = 'gc1'")
+    rows2 = db.query("SELECT * FROM mst_ledger WHERE guid = 'gc1'")
+    assert len(rows1) == 1
+    assert rows1 == rows2
+
+
+def test_query_cache_invalidated_on_upsert(db: TallyCache) -> None:
+    db.upsert_ledgers(
+        [TallyLedger(name="Cache2", guid="gc2", alter_id=1, parent_group="Test")]
+    )
+    db.query("SELECT * FROM mst_ledger WHERE guid = 'gc2'")
+    db.upsert_ledgers(
+        [
+            TallyLedger(
+                name="Cache2",
+                guid="gc2",
+                alter_id=2,
+                parent_group="Test",
+                closing_balance=Decimal("999"),
+            )
+        ]
+    )
+    rows = db.query("SELECT * FROM mst_ledger WHERE guid = 'gc2'")
+    assert rows[0]["closing_balance"] == Decimal("999")
+
+
+def test_query_iter_chunked(db: TallyCache) -> None:
+    db.upsert_ledgers(
+        [
+            TallyLedger(
+                name=f"Iter{i}", guid=f"gi{i}", alter_id=i, parent_group="Test"
+            )
+            for i in range(5)
+        ]
+    )
+    chunks = list(
+        db.query_iter(
+            "SELECT * FROM mst_ledger WHERE guid LIKE 'gi%'",
+            chunk_size=2,
+        )
+    )
+    total = sum(len(c) for c in chunks)
+    assert total == 5
+    assert len(chunks) >= 2
+
+
+def test_clear_query_cache(db: TallyCache) -> None:
+    db.clear_query_cache()
+    assert len(db._query_cache) == 0
+
+
+def test_set_cache_ttl(db: TallyCache) -> None:
+    db.set_cache_ttl(60)
+    assert db._cache_ttl == 60
+
+
+def test_set_slow_threshold(db: TallyCache) -> None:
+    db.set_slow_threshold(0.5)
+    assert db._slow_threshold == 0.5
+

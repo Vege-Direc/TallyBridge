@@ -1,6 +1,7 @@
 """MCP server using official MCP Python SDK — see RECOMMENDATIONS.md P0-1."""
 
 import os
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date as date_type
@@ -16,10 +17,55 @@ from tallybridge.config import get_config
 from tallybridge.query import TallyQuery
 
 _ANNOTATIONS = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+_WRITE_ANNOTATIONS = ToolAnnotations(readOnlyHint=False, openWorldHint=False)
 _Ctx: TypeAlias = Context[Any, Any, Any]
 
+_ALLOWED_SQL_TABLES = frozenset(
+    {
+        "mst_ledger",
+        "mst_group",
+        "mst_stock_item",
+        "mst_voucher_type",
+        "mst_unit",
+        "mst_stock_group",
+        "mst_cost_center",
+        "mst_godown",
+        "trn_voucher",
+        "trn_ledger_entry",
+        "trn_inventory_entry",
+        "trn_cost_centre",
+        "trn_bill",
+        "sync_errors",
+        "audit_log",
+        "sync_state",
+        "schema_version",
+    }
+)
 
-def _check_auth(ctx: _Ctx) -> None:
+_DANGEROUS_DUCKDB_FUNCTIONS = frozenset(
+    {
+        "read_csv_auto",
+        "read_csv",
+        "read_parquet",
+        "read_json",
+        "read_json_auto",
+        "read_blob",
+        "read_text",
+        "glob",
+        "listdir",
+        "fstat",
+        "copy",
+        "attach",
+        "detach",
+        "pragma",
+    }
+)
+
+_MAX_QUERY_LIMIT = 10000
+_MAX_SEARCH_LENGTH = 200
+
+
+def _check_auth(ctx: _Ctx | None) -> None:
     """Validate API key for HTTP transport. No-op for stdio (local trust).
 
     When mcp_api_key is configured and the server is running in HTTP mode,
@@ -31,6 +77,8 @@ def _check_auth(ctx: _Ctx) -> None:
     transport_mode = os.environ.get("TALLYBRIDGE_MCP_TRANSPORT", "stdio")
     if transport_mode == "stdio":
         return
+    if ctx is None:
+        raise PermissionError("Authentication required but no context available.")
     request = ctx.request_context
     auth_header: str | None = None
     if hasattr(request, "headers"):
@@ -44,6 +92,31 @@ def _check_auth(ctx: _Ctx) -> None:
         raise PermissionError("Invalid API key.")
 
 
+def _validate_sql_query(sql: str, limit: int = 1000) -> str:
+    """Validate that a SQL string is a safe SELECT query.
+
+    Checks:
+    - Must start with SELECT
+    - Must not contain dangerous DuckDB functions (file access, etc.)
+    - Enforces a row limit
+    - Blocks multi-statement queries
+    """
+    stripped = sql.strip().rstrip(";").strip()
+    if not stripped.upper().startswith("SELECT"):
+        raise ValueError("Only SELECT queries are allowed.")
+    if ";" in stripped:
+        raise ValueError("Multi-statement queries are not allowed.")
+    upper_sql = stripped.upper()
+    for func in _DANGEROUS_DUCKDB_FUNCTIONS:
+        pattern = rf"\b{func}\s*\("
+        if re.search(pattern, upper_sql):
+            raise ValueError(f"DuckDB function '{func}' is not allowed for security.")
+    if "LIMIT" not in upper_sql:
+        effective_limit = min(limit, _MAX_QUERY_LIMIT)
+        stripped += f" LIMIT {effective_limit}"
+    return stripped
+
+
 @dataclass
 class AppContext:
     cache: TallyCache
@@ -53,7 +126,11 @@ class AppContext:
 @asynccontextmanager
 async def app_lifespan(server: FastMCP[Any]) -> Any:
     config = get_config()
-    cache = TallyCache(config.db_path)
+    cache = TallyCache(
+        config.db_path,
+        cache_ttl=float(config.query_cache_ttl),
+        slow_threshold=config.slow_query_threshold,
+    )
     query = TallyQuery(cache)
     try:
         yield AppContext(cache=cache, query=query)
@@ -104,6 +181,7 @@ async def get_tally_digest(
     date: str | None = None, company: str | None = None, ctx: _Ctx | None = None
 ) -> Any:
     """Complete business summary: sales, purchases, balances, overdue parties."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     d = _parse_date(date)
     return _serialize(app_ctx.query.get_daily_digest(d))
@@ -117,12 +195,27 @@ async def get_ledger_balance(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Closing balance of any ledger. Positive=Dr, Negative=Cr."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     try:
         result = app_ctx.query.get_ledger_balance(ledger_name)
         return {"ledger_name": ledger_name, "balance": str(result)}
     except KeyError:
         return _error_result(f"Ledger '{ledger_name}' not found")
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_payables(
+    overdue_only: bool = False,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Outstanding purchase invoices — money the business owes."""
+    _check_auth(ctx)
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_payables(overdue_only=overdue_only)
+    )
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
@@ -133,6 +226,7 @@ async def get_receivables(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Outstanding sales invoices — money owed to the business."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_receivables(
@@ -146,6 +240,7 @@ async def get_party_outstanding(
     party_name: str, company: str | None = None, ctx: _Ctx | None = None
 ) -> Any:
     """Full receivable/payable position with one party."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.query.get_party_outstanding(party_name))
 
@@ -159,6 +254,7 @@ async def get_sales_summary(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Sales by day/week/month/party/item for a date range."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_sales_summary(
@@ -177,6 +273,7 @@ async def get_gst_summary(
     ctx: _Ctx | None = None,
 ) -> Any:
     """GST collected, ITC, and net liability for a period."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_gst_summary(
@@ -194,13 +291,19 @@ async def search_tally(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Search ledgers, parties, voucher narrations."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    if len(query) > _MAX_SEARCH_LENGTH:
+        return _error_result(
+            f"Search query too long ({len(query)} chars). Max: {_MAX_SEARCH_LENGTH}"
+        )
     return _serialize(app_ctx.query.search(query=query, limit=limit))
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
 async def get_sync_status(company: str | None = None, ctx: _Ctx | None = None) -> Any:
     """When data was last synced and record counts."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.cache.get_sync_status())
 
@@ -212,6 +315,7 @@ async def get_low_stock(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Stock items at or below quantity threshold."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     items = app_ctx.query.get_low_stock_items(
         threshold_quantity=Decimal(str(threshold))
@@ -229,6 +333,7 @@ async def get_stock_aging(
     ctx: _Ctx | None = None,
 ) -> Any:
     """How long stock has been sitting — aging by day buckets."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_stock_aging(
@@ -246,6 +351,7 @@ async def get_cost_center_summary(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Income and expense breakdown by department or project cost centre."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_cost_center_summary(
@@ -263,6 +369,7 @@ async def get_balance_sheet(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Balance sheet grouped by assets and liabilities."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(app_ctx.query.get_balance_sheet(to_date=_parse_date(to_date)))
 
@@ -275,6 +382,7 @@ async def get_profit_loss(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Profit & Loss grouped by income and expense for a period."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_profit_loss(
@@ -293,6 +401,7 @@ async def get_ledger_account(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Voucher-level general ledger for a specific ledger and date range."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_ledger_account(
@@ -312,6 +421,7 @@ async def get_stock_item_account(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Quantity movements for a stock item — inward and outward with dates."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_stock_item_account(
@@ -326,11 +436,15 @@ async def get_stock_item_account(
 async def query_tally_data(sql: str, limit: int = 1000, ctx: _Ctx | None = None) -> Any:
     """Run a custom SQL SELECT on the local cache. Tables: mst_ledger, mst_group,
     mst_stock_item, mst_unit, mst_stock_group, mst_cost_center, trn_voucher,
-    trn_ledger_entry, trn_inventory_entry, trn_cost_centre, trn_bill."""
+    trn_ledger_entry, trn_inventory_entry, trn_cost_centre, trn_bill.
+    Only SELECT queries are allowed. Dangerous functions are blocked."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
-    if "LIMIT" not in sql.upper():
-        sql = sql + f" LIMIT {limit}"
-    return app_ctx.cache.query_readonly(sql)
+    try:
+        safe_sql = _validate_sql_query(sql, limit)
+    except ValueError as exc:
+        return _error_result(str(exc))
+    return app_ctx.cache.query_readonly(safe_sql)
 
 
 @mcp.tool(annotations=_ANNOTATIONS)
@@ -340,6 +454,7 @@ async def get_sync_errors(
     ctx: _Ctx | None = None,
 ) -> Any:
     """Recent sync errors — failed record GUIDs, entity types, error messages."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.cache.get_sync_errors(entity_type=entity_type, limit=limit)
@@ -354,6 +469,7 @@ async def get_gstr1(
     ctx: _Ctx | None = None,
 ) -> Any:
     """GSTR-1 outward supply data — invoice-level sales details for GST filing."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.get_gstr1(
@@ -375,6 +491,7 @@ async def reconcile_itc(
     Matches purchase vouchers by supplier GSTIN + invoice number.
     Returns counts of matched, mismatched, missing-in-Tally, missing-in-2A.
     """
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     return _serialize(
         app_ctx.query.reconcile_itc(
@@ -392,6 +509,7 @@ async def get_gstr9(
     ctx: _Ctx | None = None,
 ) -> Any:
     """GSTR-9 annual return data — consolidated yearly GST return sections."""
+    _check_auth(ctx)
     from tallybridge.config import get_config as _get_config
     from tallybridge.connection import TallyConnection
 
@@ -408,7 +526,7 @@ async def get_gstr9(
         await conn.close()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOTATIONS)
 async def get_einvoice_status(
     from_date: str,
     to_date: str,
@@ -416,6 +534,7 @@ async def get_einvoice_status(
     ctx: _Ctx | None = None,
 ) -> Any:
     """E-invoice compliance status — IRN coverage and missing invoices."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     try:
         fd = date_type.fromisoformat(from_date)
@@ -425,7 +544,7 @@ async def get_einvoice_status(
     return _serialize(app_ctx.query.get_einvoice_summary(fd, td))
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOTATIONS)
 async def get_eway_bill_status(
     from_date: str,
     to_date: str,
@@ -433,6 +552,7 @@ async def get_eway_bill_status(
     ctx: _Ctx | None = None,
 ) -> Any:
     """E-Way Bill status — active, expired, and expiring bills."""
+    _check_auth(ctx)
     app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
     try:
         fd = date_type.fromisoformat(from_date)
@@ -440,6 +560,78 @@ async def get_eway_bill_status(
     except ValueError:
         return {"error": True, "message": "Invalid date format. Use YYYY-MM-DD."}
     return _serialize(app_ctx.query.get_eway_bill_summary(fd, td))
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def export_data(
+    table: str,
+    format: str = "csv",
+    columns: list[str] | None = None,
+    where: str | None = None,
+    limit: int | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Export cached Tally data as CSV or JSON string. Tables: ledgers, groups,
+    stock_items, voucher_types, units, stock_groups, cost_centers, godowns,
+    vouchers, ledger_entries, inventory_entries, cost_centre_entries, bill_entries.
+    The 'where' parameter only supports simple column=value conditions."""
+    _check_auth(ctx)
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    from tallybridge.export import VALID_TABLES, DataExporter
+
+    if table not in VALID_TABLES:
+        return _error_result(
+            f"Unknown table '{table}'. Valid: {sorted(VALID_TABLES)}"
+        )
+    if columns:
+        for col in columns:
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", col):
+                return _error_result(f"Invalid column name: '{col}'")
+    if where:
+        _blocked = (
+            ";", "--", "/*", "UNION", "DROP", "DELETE",
+            "INSERT", "UPDATE", "ALTER", "CREATE", "ATTACH",
+        )
+        if any(kw in where.upper() for kw in _blocked):
+            return _error_result(
+                "Invalid WHERE clause. Only simple conditions allowed."
+            )
+    if limit is not None and (limit < 1 or limit > _MAX_QUERY_LIMIT):
+        return _error_result(
+            f"Limit must be between 1 and {_MAX_QUERY_LIMIT}."
+        )
+
+    exporter = DataExporter(app_ctx.cache)
+    if format == "json":
+        _, rows = exporter._fetch_data(table, columns, where, limit)
+        return _serialize(
+            [{k: _serialize(v) for k, v in row.items()} for row in rows]
+        )
+    csv_str = exporter.export_csv_bytes(table, columns, where, limit)
+    return csv_str
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def get_audit_log(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    entity_type: str | None = None,
+    operation: str | None = None,
+    limit: int = 100,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """Audit log of all write operations (create, cancel, import) with timestamps."""
+    _check_auth(ctx)
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    return _serialize(
+        app_ctx.query.get_audit_log(
+            from_date=_parse_date(from_date),
+            to_date=_parse_date(to_date),
+            entity_type=entity_type,
+            operation=operation,
+            limit=limit,
+        )
+    )
 
 
 def main() -> None:

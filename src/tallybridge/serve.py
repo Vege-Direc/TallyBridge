@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
 from pydantic import BaseModel
 
 from tallybridge.cache import TallyCache
@@ -22,6 +24,12 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+)
+
+_DANGEROUS_SQL_PATTERNS = re.compile(
+    r";|--|/\*|\bread_csv\b|\bread_parquet\b|\bread_json\b|\bread_blob\b"
+    r"|\bread_text\b|\bglob\b|\blistdir\b|\battach\b|\bdetach\b",
+    re.IGNORECASE,
 )
 
 
@@ -51,11 +59,31 @@ VIEW_DESCRIPTIONS: dict[str, str] = {
 _cache: TallyCache | None = None
 
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next: Any) -> Any:
+    config = get_config()
+    if config.mcp_api_key:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required. Set Authorization: Bearer <api_key>.",
+            )
+        token = auth_header[7:]
+        if token != config.mcp_api_key:
+            raise HTTPException(status_code=401, detail="Invalid API key.")
+    return await call_next(request)
+
+
 def _get_cache() -> TallyCache:
     global _cache
     if _cache is None:
         cfg = get_config()
-        _cache = TallyCache(cfg.db_path)
+        _cache = TallyCache(
+            cfg.db_path,
+            cache_ttl=float(cfg.query_cache_ttl),
+            slow_threshold=cfg.slow_query_threshold,
+        )
         _cache.initialize()
     return _cache
 
@@ -103,7 +131,11 @@ async def query_view(
             f'SELECT * FROM "{view_name}" LIMIT {limit} OFFSET {offset}'
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.warning("View query failed: {}", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Query execution failed. Check server logs.",
+        ) from exc
 
     if not results:
         return QueryResponse(columns=[], rows=[], row_count=0)
@@ -119,31 +151,30 @@ async def execute_query(request: QueryRequest) -> QueryResponse:
     if not sql:
         raise HTTPException(status_code=400, detail="SQL query cannot be empty")
 
-    sql_upper = sql.upper()
-    forbidden_keywords = [
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-        "DROP",
-        "CREATE",
-        "ALTER",
-        "ATTACH",
-        "DETACH",
-        "COPY",
-        "EXPORT",
-    ]
-    for kw in forbidden_keywords:
-        if sql_upper.startswith(kw) or f" {kw} " in f" {sql_upper} ":
-            raise HTTPException(
-                status_code=403,
-                detail=f"Write operation '{kw}' is not allowed. This API is read-only.",
-            )
+    if not sql.upper().startswith("SELECT"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only SELECT queries are allowed. This API is read-only.",
+        )
+
+    if _DANGEROUS_SQL_PATTERNS.search(sql):
+        raise HTTPException(
+            status_code=403,
+            detail="Query contains disallowed patterns. This API is read-only.",
+        )
+
+    if "LIMIT" not in sql.upper():
+        sql += " LIMIT 10000"
 
     cache = _get_cache()
     try:
         results = cache.query_readonly(sql)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("Query failed: {}", exc)
+        raise HTTPException(
+            status_code=400,
+            detail="Query execution failed. Check server logs.",
+        ) from exc
 
     if not results:
         return QueryResponse(columns=[], rows=[], row_count=0)
@@ -163,7 +194,8 @@ async def list_tables() -> dict[str, Any]:
             "WHERE table_schema = 'main' "
             "ORDER BY table_name"
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("Tables list query failed: {}", exc)
         results = cache.query_readonly(
             "SELECT name AS table_name FROM sqlite_master "
             "WHERE type='table' ORDER BY name"

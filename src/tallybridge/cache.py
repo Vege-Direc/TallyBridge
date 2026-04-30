@@ -1,7 +1,10 @@
 """DuckDB cache layer — see SPECS.md §6."""
 
 import hashlib
+import json as _json
 import os
+import time
+from collections import OrderedDict
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -262,6 +265,21 @@ ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS transporter_name TEXT;
 ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS vehicle_number TEXT;
 ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS distance_km INTEGER;""",
     ),
+    (
+        10,
+        "add audit_log table for write operation tracking",
+        """CREATE TABLE IF NOT EXISTS audit_log (
+    id          BIGINT DEFAULT nextval('seq_entry_id') PRIMARY KEY,
+    timestamp   TIMESTAMP DEFAULT current_timestamp,
+    operation   TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_guid TEXT,
+    entity_name TEXT,
+    user_info   TEXT DEFAULT 'system',
+    details_json TEXT,
+    success     BOOLEAN DEFAULT true
+);""",
+    ),
 ]
 
 VIEWS_SQL = """
@@ -360,10 +378,27 @@ def _compute_content_hash(*values: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+_MAX_CACHE_ENTRIES = 256
+
+
 class TallyCache:
-    def __init__(self, db_path: str) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        cache_ttl: float | None = None,
+        slow_threshold: float | None = None,
+    ) -> None:
         self._db_path = db_path
         self._conn: duckdb.DuckDBPyConnection | None = None
+        self._query_cache: OrderedDict[
+            str, tuple[float, list[dict[str, Any]]]
+        ] = OrderedDict()
+        self._cache_ttl: float = (
+            cache_ttl if cache_ttl is not None else 300.0
+        )
+        self._slow_threshold: float = (
+            slow_threshold if slow_threshold is not None else 1.0
+        )
         self.initialize()
 
     @property
@@ -386,6 +421,7 @@ class TallyCache:
                     [version, description],
                 )
         self.conn.execute(VIEWS_SQL)
+        self._query_cache.clear()
 
     def upsert_ledgers(self, ledgers: list[TallyLedger]) -> int:
         """INSERT OR REPLACE ledgers by guid. Returns affected row count."""
@@ -423,6 +459,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(ledgers)
 
     def upsert_groups(self, groups: list[TallyGroup]) -> int:
@@ -456,6 +493,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(groups)
 
     def upsert_stock_items(self, items: list[TallyStockItem]) -> int:
@@ -496,6 +534,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(items)
 
     def upsert_voucher_types(self, vtypes: list[TallyVoucherType]) -> int:
@@ -516,6 +555,7 @@ class TallyCache:
             (guid, alter_id, name, parent, content_hash) VALUES (?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(vtypes)
 
     def upsert_units(self, units: list[TallyUnit]) -> int:
@@ -547,6 +587,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(units)
 
     def upsert_stock_groups(self, groups: list[TallyStockGroup]) -> int:
@@ -569,6 +610,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(groups)
 
     def upsert_cost_centers(self, centers: list[TallyCostCenter]) -> int:
@@ -594,6 +636,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(centers)
 
     def upsert_godowns(self, godowns: list[TallyGodown]) -> int:
@@ -615,6 +658,7 @@ class TallyCache:
             VALUES (?, ?, ?, ?, ?)""",
             rows,
         )
+        self._query_cache.clear()
         return len(godowns)
 
     def upsert_vouchers(
@@ -790,14 +834,88 @@ class TallyCache:
         }
 
     def query(self, sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
-        """Execute parameterised SELECT, return list of row dicts. Read-only."""
+        """Execute parameterised SELECT, return list of row dicts. Read-only.
+
+        Features:
+        - Query result caching with configurable TTL
+        - Slow query logging (threshold from config)
+        - LRU-style cache eviction when max entries reached
+        """
+        cache_key = f"{sql}|{params}"
+        now = time.time()
+        cached = self._query_cache.get(cache_key)
+        if cached is not None:
+            ts, rows = cached
+            if now - ts < self._cache_ttl:
+                self._query_cache.move_to_end(cache_key)
+                return rows
+            del self._query_cache[cache_key]
         try:
+            start = time.monotonic()
             result = self.conn.execute(sql, params or [])
             columns = [desc[0] for desc in result.description]
-            return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
+            rows = [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
+            elapsed = time.monotonic() - start
+            if elapsed > self._slow_threshold:
+                logger.warning(
+                    "Slow query ({:.3f}s): {}",
+                    elapsed,
+                    sql[:200],
+                )
+            self._query_cache[cache_key] = (now, rows)
+            self._query_cache.move_to_end(cache_key)
+            while len(self._query_cache) > _MAX_CACHE_ENTRIES:
+                self._query_cache.popitem(last=False)
+            return rows
         except Exception as exc:
             logger.warning("Query failed: {}", exc)
             raise TallyBridgeCacheError(str(exc)) from exc
+
+    def query_iter(
+        self, sql: str, params: list[Any] | None = None, chunk_size: int = 10000
+    ) -> Any:
+        """Execute SELECT and yield rows in chunks for memory-efficient iteration.
+
+        Yields list[dict] chunks of up to chunk_size rows each.
+        """
+        try:
+            start = time.monotonic()
+            result = self.conn.execute(sql, params or [])
+            columns = [desc[0] for desc in result.description]
+            chunk: list[dict[str, Any]] = []
+            while True:
+                batch = result.fetchmany(chunk_size)
+                if not batch:
+                    break
+                for row in batch:
+                    chunk.append(dict(zip(columns, row, strict=False)))
+                if len(chunk) >= chunk_size:
+                    yield chunk
+                    chunk = []
+            if chunk:
+                yield chunk
+            elapsed = time.monotonic() - start
+            if elapsed > self._slow_threshold:
+                logger.warning(
+                    "Slow iter query ({:.3f}s): {}",
+                    elapsed,
+                    sql[:200],
+                )
+        except Exception as exc:
+            logger.warning("Iter query failed: {}", exc)
+            raise TallyBridgeCacheError(str(exc)) from exc
+
+    def clear_query_cache(self) -> None:
+        """Clear the query result cache."""
+        self._query_cache.clear()
+
+    def set_cache_ttl(self, ttl: float) -> None:
+        """Set query cache TTL in seconds."""
+        self._cache_ttl = ttl
+
+    def set_slow_threshold(self, threshold: float) -> None:
+        """Set slow query threshold in seconds."""
+        self._slow_threshold = threshold
 
     def get_ledger(self, name: str) -> TallyLedger | None:
         rows = self.query("SELECT * FROM mst_ledger WHERE name = ?", [name])
@@ -1116,6 +1234,72 @@ class TallyCache:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def log_audit(
+        self,
+        operation: str,
+        entity_type: str,
+        entity_guid: str | None = None,
+        entity_name: str | None = None,
+        user_info: str = "system",
+        details: dict[str, Any] | None = None,
+        success: bool = True,
+    ) -> None:
+        """Write an audit log entry. Non-blocking — never raises."""
+        if self._conn is None:
+            return
+        try:
+            details_str = _json.dumps(details) if details else None
+            self._conn.execute(
+                """INSERT INTO audit_log
+                (operation, entity_type, entity_guid,
+                 entity_name, user_info, details_json, success)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    operation,
+                    entity_type,
+                    entity_guid,
+                    entity_name,
+                    user_info,
+                    details_str,
+                    success,
+                ],
+            )
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to write audit log: {}", exc)
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+
+    def get_audit_log(
+        self,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        entity_type: str | None = None,
+        operation: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query audit log with filters."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if from_date:
+            conditions.append("timestamp >= ?")
+            params.append(str(from_date))
+        if to_date:
+            conditions.append("timestamp <= ?")
+            params.append(str(to_date))
+        if entity_type:
+            conditions.append("entity_type = ?")
+            params.append(entity_type)
+        if operation:
+            conditions.append("operation = ?")
+            params.append(operation)
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        sql = f"SELECT * FROM audit_log{where} ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        return self.query(sql, params)
 
     def get_cached_guids(self, entity_type: str) -> set[str]:
         """Return all GUIDs currently cached for an entity type."""

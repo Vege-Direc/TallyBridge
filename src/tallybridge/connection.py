@@ -187,8 +187,8 @@ class TallyConnection:
             timeout_hint = ""
             if isinstance(exc, httpx.ReadTimeout):
                 timeout_hint = (
-                    f" Read timeout is {self._config.tally_port}. "
-                    f"Try reducing VOUCHER_BATCH_SIZE if syncing large datasets."
+                    " Read timeout is 60s. "
+                    "Try reducing VOUCHER_BATCH_SIZE if syncing large datasets."
                 )
             raise TallyConnectionError(
                 f"Could not connect to Tally on "

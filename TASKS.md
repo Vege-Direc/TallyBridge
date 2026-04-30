@@ -1216,7 +1216,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
 
 ### Phase 13B — P1: Data Export & Audit
 
-- [ ] **13d · Add data export module (CSV, Excel, JSON)** — Users need to
+- [x] **13d · Add data export module (CSV, Excel, JSON)** — Users need to
   export cached Tally data for analysis, sharing, and backup. Add:
   1. `src/tallybridge/export.py` with `DataExporter` class
   2. `export_csv(table, path, filters)` — Export any cache table to CSV
@@ -1230,7 +1230,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(export): add CSV/Excel/JSON data export module
   ```
 
-- [ ] **13e · Add audit logging for write operations** — Track all data
+- [x] **13e · Add audit logging for write operations** — Track all data
   modifications for compliance and debugging. Add:
   1. `audit_log` table in cache schema (migration 10): timestamp, operation,
      entity_type, entity_guid, user, details_json
@@ -1245,7 +1245,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(audit): add audit logging for all write operations
   ```
 
-- [ ] **13f · Add scheduled report generation** — Businesses need automated
+- [x] **13f · Add scheduled report generation** — Businesses need automated
   daily/weekly/monthly reports. Add:
   1. `src/tallybridge/reports.py` with `ReportScheduler` class
   2. Template-based report generation (daily digest, GST summary, receivables)
@@ -1261,7 +1261,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
 
 ### Phase 13C — P2: Cloud Sync & Polish
 
-- [ ] **13g · Implement Supabase cloud sync** — Replace the `cloud/supabase.py`
+- [ ] **13g · Implement Supabase cloud sync** — *(Deferred)* Replace the `cloud/supabase.py`
   stub with a working cloud sync module. Add:
   1. `CloudSync` class with incremental upload/download
   2. Conflict resolution strategy (last-write-wins with audit trail)
@@ -1275,7 +1275,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(cloud): implement Supabase cloud sync
   ```
 
-- [ ] **13h · Performance optimization for large datasets** — Optimize for
+- [x] **13h · Performance optimization for large datasets** — Optimize for
   companies with 100k+ vouchers:
   1. Streaming/lazy loading for large query results
   2. Chunked export for CSV/Excel (avoid loading all data in memory)
@@ -1288,7 +1288,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: perf: optimize for large dataset handling
   ```
 
-- [ ] **13i · Final quality gate and documentation** — Ensure all Phase 13
+- [x] **13i · Final quality gate and documentation** — Ensure all Phase 13
   code passes quality checks and update all documentation:
   1. `mypy src/` — 0 errors
   2. `ruff check src/ tests/` — All checks passed

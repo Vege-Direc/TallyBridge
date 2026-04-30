@@ -44,7 +44,11 @@ class TallyBridge:
 
     def __init__(self, config: TallyBridgeConfig | None = None) -> None:
         self._config = config or TallyBridgeConfig()
-        self._cache = TallyCache(self._config.db_path)
+        self._cache = TallyCache(
+            self._config.db_path,
+            cache_ttl=float(self._config.query_cache_ttl),
+            slow_threshold=self._config.slow_query_threshold,
+        )
         self._cache.initialize()
         self._connection = TallyConnection(self._config)
         self._parser = TallyXMLParser()
@@ -231,25 +235,16 @@ class TallyBridge:
         opening_balance: str = "0",
         validate: bool = True,
     ) -> ImportResult:
-        """Create a ledger in TallyPrime.
-
-        Requires ``TALLYBRIDGE_ALLOW_WRITES=true``.
-
-        Args:
-            name: Ledger name.
-            parent_group: Parent group name.
-            opening_balance: Opening balance string (e.g. ``"5000"``).
-            validate: If True, validate against cache before posting.
-
-        Returns:
-            ImportResult with created/altered/deleted/error counts.
-
-        Raises:
-            TallyDataError: If validation fails and validate=True.
-        """
         if validate:
             result = await self.validate_ledger(name, parent_group)
             if not result.valid:
+                self._cache.log_audit(
+                    operation="create",
+                    entity_type="ledger",
+                    entity_name=name,
+                    success=False,
+                    details={"errors": result.errors},
+                )
                 raise TallyDataError(
                     f"Ledger validation failed: {'; '.join(result.errors)}"
                 )
@@ -258,7 +253,15 @@ class TallyBridge:
             parent_group=parent_group,
             opening_balance=opening_balance,
         )
-        return await self._connection.import_masters(xml_data)
+        import_result = await self._connection.import_masters(xml_data)
+        self._cache.log_audit(
+            operation="create",
+            entity_type="ledger",
+            entity_name=name,
+            success=import_result.created > 0 or import_result.altered > 0,
+            details={"parent_group": parent_group, "opening_balance": opening_balance},
+        )
+        return import_result
 
     async def create_voucher(
         self,
@@ -270,26 +273,6 @@ class TallyBridge:
         party_ledger: str | None = None,
         validate: bool = True,
     ) -> ImportResult:
-        """Create a voucher in TallyPrime.
-
-        Requires ``TALLYBRIDGE_ALLOW_WRITES=true``.
-
-        Args:
-            voucher_type: Voucher type name (e.g. ``"Sales"``, ``"Payment"``).
-            date: Date in YYYYMMDD format.
-            ledger_entries: List of dicts with keys ``"ledger_name"`` and
-                ``"amount"`` (positive=Dr, negative=Cr).
-            narration: Optional narration text.
-            voucher_number: Optional voucher number.
-            party_ledger: Optional party ledger name.
-            validate: If True, validate against cache before posting.
-
-        Returns:
-            ImportResult with created/altered/deleted/error counts.
-
-        Raises:
-            TallyDataError: If validation fails and validate=True.
-        """
         if validate:
             result = await self.validate_voucher(
                 voucher_type=voucher_type,
@@ -299,6 +282,13 @@ class TallyBridge:
                 voucher_number=voucher_number,
             )
             if not result.valid:
+                self._cache.log_audit(
+                    operation="create",
+                    entity_type="voucher",
+                    entity_name=voucher_number,
+                    success=False,
+                    details={"errors": result.errors, "voucher_type": voucher_type},
+                )
                 raise TallyDataError(
                     f"Voucher validation failed: {'; '.join(result.errors)}"
                 )
@@ -310,26 +300,35 @@ class TallyBridge:
             voucher_number=voucher_number,
             party_ledger=party_ledger,
         )
-        return await self._connection.import_vouchers(xml_data)
+        import_result = await self._connection.import_vouchers(xml_data)
+        self._cache.log_audit(
+            operation="create",
+            entity_type="voucher",
+            entity_name=voucher_number,
+            success=import_result.created > 0 or import_result.altered > 0,
+            details={
+                "voucher_type": voucher_type,
+                "date": date,
+                "entries_count": len(ledger_entries),
+            },
+        )
+        return import_result
 
     async def cancel_voucher(
         self, guid: str, voucher_type: str = "Sales"
     ) -> ImportResult:
-        """Cancel a voucher in TallyPrime.
-
-        Requires ``TALLYBRIDGE_ALLOW_WRITES=true``.
-
-        Args:
-            guid: Voucher GUID to cancel.
-            voucher_type: Voucher type name (default ``"Sales"``).
-
-        Returns:
-            ImportResult with created/altered/deleted/error counts.
-        """
         xml_data = TallyConnection.build_cancel_voucher_xml(
             guid=guid, voucher_type=voucher_type
         )
-        return await self._connection.import_vouchers(xml_data)
+        import_result = await self._connection.import_vouchers(xml_data)
+        self._cache.log_audit(
+            operation="cancel",
+            entity_type="voucher",
+            entity_guid=guid,
+            success=import_result.altered > 0,
+            details={"voucher_type": voucher_type},
+        )
+        return import_result
 
     async def close(self) -> None:
         """Close connections and release resources."""

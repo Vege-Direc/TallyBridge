@@ -819,8 +819,6 @@ class TallyQuery:
         GSTR-1 export with all portal sections, use
         ``TallyConnection.fetch_gstr1()`` instead.
         """
-        from decimal import Decimal
-
         from tallybridge.models.report import GSTR1Invoice, GSTR1Section
 
         rows = self._cache.query(
@@ -1047,4 +1045,21 @@ class TallyQuery:
             itc_claimed=itc_claimed,
             itc_available=itc_available,
             mismatches=mismatches,
+        )
+
+    def get_audit_log(
+        self,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        entity_type: str | None = None,
+        operation: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query audit log with filters."""
+        return self._cache.get_audit_log(
+            from_date=from_date,
+            to_date=to_date,
+            entity_type=entity_type,
+            operation=operation,
+            limit=limit,
         )

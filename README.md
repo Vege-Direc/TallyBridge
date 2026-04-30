@@ -1,11 +1,35 @@
+<div align="center">
+
 # TallyBridge
 
-Sync TallyPrime to a local database. Query it from Python or AI.
+**Sync TallyPrime to a local database. Query it from Python or AI.**
+
+[![Test](https://github.com/nicholasgriffintn/tallybridge/actions/workflows/test.yml/badge.svg)](https://github.com/nicholasgriffintn/tallybridge/actions/workflows/test.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
 
 TallyBridge pulls your accounting data out of TallyPrime and into a local DuckDB
 file. Once synced, **TallyPrime can be closed** — all queries run against the
 local database. It also exposes an MCP server so AI assistants (Claude, Cursor)
 can query your data in plain English.
+
+## Highlights
+
+- **Offline-first** — TallyPrime only needs to run during sync
+- **Incremental sync** — AlterID-based, only fetches what changed
+- **22 MCP tools** — Query your accounts from Claude, Cursor, or any AI
+- **GST compliance** — GSTR-1, GSTR-3B, GSTR-9, ITC reconciliation
+- **Write-back** — Create ledgers and vouchers from Python or AI
+- **BI integration** — Pre-built views for Power BI, Metabase, Superset
+- **Data export** — CSV, Excel, JSON with audit logging
+- **TallyPrime 7.0** — Auto-detects and uses JSON/JSONEx when available
+- **Tally.ERP 9 compatible** — XML fallback for all versions
+
+---
 
 ## Quick Start
 
@@ -15,7 +39,7 @@ can query your data in plain English.
 pip install tallybridge
 ```
 
-### 2. Enable TallyPrime HTTP server
+### 2. Enable TallyPrime HTTP Server
 
 1. Open TallyPrime and load your company
 2. Press **F1** → **Settings** → **Connectivity**
@@ -36,9 +60,9 @@ See [docs/tally-setup.md](docs/tally-setup.md) for full instructions.
 tallybridge sync
 ```
 
-This fetches all ledgers, groups, stock items, vouchers, godowns, and more into a local
-`tallybridge.duckdb` file. **You only need TallyPrime running during sync.** After
-that, close TallyPrime — queries work offline against the local database.
+This fetches all ledgers, groups, stock items, vouchers, and more into a local
+`tallybridge.duckdb` file. **You only need TallyPrime running during sync.**
+After that, close TallyPrime — queries work offline.
 
 ### 4. Query from Python
 
@@ -66,137 +90,134 @@ Add to your Claude Desktop config:
 
 See [docs/mcp-setup.md](docs/mcp-setup.md) for full details.
 
-## CLI
+---
+
+## CLI Reference
 
 ```bash
-tallybridge init              # Interactive setup wizard
-tallybridge sync              # Sync data from TallyPrime
-tallybridge sync --full       # Force full re-sync
-tallybridge sync --watch      # Continuous sync every N minutes
-tallybridge status            # Show sync status per entity
-tallybridge doctor            # Run diagnostic checks
-tallybridge config show       # Print current configuration
-tallybridge config set KEY VALUE  # Set a config value
-tallybridge mcp               # Start MCP server (for AI assistants)
-tallybridge mcp --http        # Start MCP server with HTTP transport
-tallybridge serve             # Start HTTP API bridge for BI tools
-tallybridge serve --port 8080 # Start on custom port
-tallybridge --version         # Show version
+# Setup & sync
+tallybridge init                        # Interactive setup wizard
+tallybridge sync                        # Sync data from TallyPrime
+tallybridge sync --full                 # Force full re-sync
+tallybridge sync --watch                # Continuous sync every N minutes
+tallybridge status                      # Show sync status per entity
+tallybridge doctor                      # Run diagnostic checks
+
+# Configuration
+tallybridge config show                 # Print current configuration
+tallybridge config set KEY VALUE        # Set a config value
+
+# Data export
+tallybridge export csv --table ledgers  # Export table to CSV
+tallybridge export csv --table vouchers --where "date >= '2025-01-01'"
+tallybridge export excel                # Export all tables to Excel
+tallybridge export json --table stock_items
+
+# Reports
+tallybridge report generate --type daily_digest
+tallybridge report generate --type gst_summary --from 2025-01-01 --to 2025-03-31
+
+# MCP & API
+tallybridge mcp                         # Start MCP server (stdio)
+tallybridge mcp --http                  # Start MCP server with HTTP transport
+tallybridge serve                       # Start HTTP API bridge for BI tools
+tallybridge serve --port 8080           # Start on custom port
+
+# Other
+tallybridge --version                   # Show version
 ```
+
+---
 
 ## Python API
 
+### Business Summaries
+
 ```python
 import tallybridge
 
 q = tallybridge.connect()
 
-# Business summaries
-q.get_daily_digest()                        # Sales, purchases, balances
-q.get_receivables()                         # Outstanding sales invoices
-q.get_payables()                            # Outstanding purchase invoices
-q.get_gst_summary(from_date, to_date)      # GST collected, ITC, net liability
+q.get_daily_digest()                            # Sales, purchases, balances
+q.get_receivables()                             # Outstanding sales invoices
+q.get_payables()                                # Outstanding purchase invoices
+q.get_gst_summary(from_date, to_date)           # GST collected, ITC, net liability
 q.get_sales_summary(from_date, to_date, group_by="party")
+```
 
-# Ledger queries
-q.get_ledger_balance("Cash")                # Closing balance of any ledger
-q.get_party_outstanding("Sharma Trading Co")
+### Ledger & Account Queries
 
-# Inventory
-q.get_stock_summary()                       # All stock items with quantities
-q.get_low_stock_items(threshold=5)          # Items below threshold
-q.get_stock_aging()                         # How long stock has been sitting
+```python
+q.get_ledger_balance("Cash")                    # Closing balance
+q.get_party_outstanding("Sharma Trading Co")    # Full party position
+q.get_balance_sheet(to_date="2025-03-31")       # Balance sheet
+q.get_profit_loss(from_date, to_date)           # Profit & Loss
+q.get_ledger_account("Cash", from_date, to_date)  # Voucher-level GL
+```
 
-# GST Reports
-q.fetch_gstr1(from_date, to_date)              # GSTR-1 outward supply report
+### Inventory
+
+```python
+q.get_stock_summary()                           # All stock items with quantities
+q.get_low_stock_items(threshold=5)              # Items below threshold
+q.get_stock_aging()                             # How long stock has been sitting
+q.get_stock_item_account("Widget A", from_date, to_date)  # Stock movements
+```
+
+### GST Reports
+
+```python
+q.fetch_gstr1(from_date, to_date)               # GSTR-1 outward supply report
 q.fetch_gstr3b(from_date, to_date)              # GSTR-3B summary return
 q.fetch_gstr9(from_date, to_date)               # GSTR-9 annual return
 q.reconcile_itc(from_date, to_date)             # GSTR-2A ITC reconciliation
+```
 
-# Search
+### Search
+
+```python
 q.search(query="sharma", limit=10)              # Search ledgers, parties, narrations
 ```
 
-## Configuration
-
-Set via environment variables or a `.env` file:
-
-| Variable | Default | Description |
-|---|---|---|
-| `TALLYBRIDGE_TALLY_HOST` | `localhost` | TallyPrime host |
-| `TALLYBRIDGE_TALLY_PORT` | `9000` | TallyPrime HTTP port |
-| `TALLYBRIDGE_TALLY_COMPANY` | *(auto-detect)* | Company name in TallyPrime |
-| `TALLYBRIDGE_TALLY_ENCODING` | `utf-8` | Request encoding (`utf-8` or `utf-16`) |
-| `TALLYBRIDGE_TALLY_EXPORT_FORMAT` | `auto` | Export format: `auto`, `xml`, or `json` (auto uses JSONEx on TallyPrime 7.0+) |
-| `TALLYBRIDGE_DB_PATH` | `tallybridge.duckdb` | Local database file path |
-| `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
-| `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
-| `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error (Tally semantics) |
-| `TALLYBRIDGE_ALLOW_WRITES` | `false` | Enable import/write-back to TallyPrime (requires explicit opt-in) |
-| `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport auth |
-| `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
-
-Example `.env`:
-
-```env
-TALLYBRIDGE_TALLY_HOST=localhost
-TALLYBRIDGE_TALLY_PORT=9000
-TALLYBRIDGE_TALLY_COMPANY=My Company Pvt Ltd
-```
-
-## Testing with TallyPrime
-
-If you have access to a TallyPrime installation:
-
-1. **Open TallyPrime** and load a company with some data
-2. **Enable HTTP server** (F1 → Settings → Connectivity → Server, port 9000)
-3. **Run diagnostics**:
-
-```bash
-tallybridge doctor
-```
-
-4. **Sync and verify**:
-
-```bash
-tallybridge sync
-tallybridge status
-```
-
-5. **Query from Python**:
+### E-Invoice & E-Way Bill
 
 ```python
-import tallybridge
-q = tallybridge.connect()
-print(q.get_daily_digest())
-print(q.search("cash"))
+q.get_einvoice_summary(from_date, to_date)      # IRN coverage and missing invoices
+q.get_eway_bill_summary(from_date, to_date)     # Active, expired, expiring bills
 ```
 
-## How It Works
+### Data Export
 
-```
-  TallyPrime (port 9000)          Your Machine
-  ┌─────────────────┐     ┌──────────────────────┐
-  │  Accounting data │────→│  TallySyncEngine      │
-  │  (XML/JSON HTTP) │     │  TallyXMLParser       │
-  └─────────────────┘     │  TallyJSONParser       │
-                           │          │             │
-                           │          ▼             │
-                           │  tallybridge.duckdb    │
-                           │  (local, offline)      │
-                           │          │             │
-                           │    ┌─────┴──────┐      │
-                           │    │            │      │
-                           │  TallyQuery   MCP Server
-                           │  (Python)    (for AI)   │
-                           └──────────────────────┘
+```python
+from tallybridge.export import DataExporter
+from tallybridge.cache import TallyCache
+
+cache = TallyCache("tallybridge.duckdb")
+exporter = DataExporter(cache)
+
+# CSV export with filters
+exporter.export_csv("ledgers", path="ledgers.csv")
+exporter.export_csv("vouchers", where="date >= '2025-01-01'", limit=1000)
+
+# Excel (multi-sheet) — requires pip install tallybridge[excel]
+exporter.export_excel(path="tally_data.xlsx")
+
+# JSON
+exporter.export_json("stock_items", path="stock.json")
+
+# Memory-efficient chunked export for large datasets
+exporter.export_csv_chunked("vouchers", path="vouchers.csv", chunk_size=50000)
 ```
 
-- **Sync** pulls data from TallyPrime via its HTTP API (XML or JSON/JSONEx on TallyPrime 7.0+)
-- **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
-- **Query** reads from the local file — TallyPrime doesn't need to be running
-- **Import** write back to TallyPrime (masters and vouchers) when `TALLYBRIDGE_ALLOW_WRITES=true`
-- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (22 tools)
+### Audit Log
+
+```python
+# All write operations are automatically logged
+q.get_audit_log(from_date="2025-01-01", operation="create")
+q.get_audit_log(entity_type="voucher")
+```
+
+---
 
 ## TallyBridge Unified Client
 
@@ -237,6 +258,8 @@ async def main():
 asyncio.run(main())
 ```
 
+---
+
 ## Import / Write-Back
 
 Create ledgers and vouchers in TallyPrime from Python:
@@ -271,9 +294,9 @@ result = asyncio.run(conn.import_vouchers(xml))
 asyncio.run(conn.close())
 ```
 
-## Multi-Currency Vouchers
+---
 
-TallyVoucher and TallyVoucherEntry include optional currency fields for import/export businesses:
+## Multi-Currency Vouchers
 
 ```python
 from tallybridge import TallyVoucher, TallyVoucherEntry
@@ -298,8 +321,7 @@ v = TallyVoucher(
 ```
 
 Currency fields (`currency`, `forex_amount`, `exchange_rate`, `base_currency_amount`) are
-`None` by default for INR-only vouchers. The sync pipeline automatically stores these
-fields when present in Tally data.
+`None` by default for INR-only vouchers.
 
 For TallyPrime 7.0+, use JSON import:
 
@@ -308,6 +330,40 @@ conn._detected_version = TallyProduct.PRIME_7
 msg = TallyConnection.build_ledger_json("New Supplier", "Sundry Creditors")
 result = asyncio.run(conn.import_masters_json(msg))
 ```
+
+---
+
+## Configuration
+
+Set via environment variables or a `.env` file:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TALLYBRIDGE_TALLY_HOST` | `localhost` | TallyPrime host |
+| `TALLYBRIDGE_TALLY_PORT` | `9000` | TallyPrime HTTP port |
+| `TALLYBRIDGE_TALLY_COMPANY` | *(auto-detect)* | Company name in TallyPrime |
+| `TALLYBRIDGE_TALLY_ENCODING` | `utf-8` | Request encoding (`utf-8` or `utf-16`) |
+| `TALLYBRIDGE_TALLY_EXPORT_FORMAT` | `auto` | Export format: `auto`, `xml`, or `json` |
+| `TALLYBRIDGE_DB_PATH` | `tallybridge.duckdb` | Local database file path |
+| `TALLYBRIDGE_SYNC_FREQUENCY_MINUTES` | `5` | Sync interval in `--watch` mode |
+| `TALLYBRIDGE_VOUCHER_BATCH_SIZE` | `5000` | Vouchers fetched per batch (100–10000) |
+| `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error |
+| `TALLYBRIDGE_ALLOW_WRITES` | `false` | Enable write-back to TallyPrime |
+| `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport |
+| `TALLYBRIDGE_QUERY_CACHE_TTL` | `300` | Query result cache TTL in seconds |
+| `TALLYBRIDGE_SLOW_QUERY_THRESHOLD` | `1.0` | Log queries slower than this (seconds) |
+| `TALLYBRIDGE_EXPORT_CHUNK_SIZE` | `10000` | Rows per chunk for chunked export |
+| `TALLYBRIDGE_LOG_LEVEL` | `INFO` | Logging level |
+
+Example `.env`:
+
+```env
+TALLYBRIDGE_TALLY_HOST=localhost
+TALLYBRIDGE_TALLY_PORT=9000
+TALLYBRIDGE_TALLY_COMPANY=My Company Pvt Ltd
+```
+
+---
 
 ## BI Integration
 
@@ -322,18 +378,67 @@ TallyBridge creates 5 pre-built SQL views in DuckDB for BI tool connections:
 | `v_party_position` | Party receivable/payable classification |
 
 Connect from BI tools:
-- **Power BI**: Install DuckDB ODBC driver, connect to `tallybridge.duckdb`
-- **Metabase**: Use native DuckDB driver
-- **Superset**: Use DuckDB connector
-- **Excel**: ODBC or export via `COPY table TO 'file.csv'`
-- **Any HTTP client**: Use `tallybridge serve` for a REST API (requires `pip install tallybridge[serve]`)
+- **Power BI** — DuckDB ODBC driver
+- **Metabase** — Native DuckDB driver
+- **Superset** — DuckDB connector
+- **Excel** — ODBC or `tallybridge export csv`
+- **Any HTTP client** — `tallybridge serve` REST API (requires `pip install tallybridge[serve]`)
 
 ```bash
 pip install tallybridge[serve]
 tallybridge serve --port 8080
-# Then query: curl http://localhost:8080/views/v_sales_summary
-# Or POST SQL: curl -X POST http://localhost:8080/query -d '{"sql":"SELECT * FROM mst_ledger"}'
+# GET  http://localhost:8080/views/v_sales_summary
+# POST http://localhost:8080/query  {"sql": "SELECT * FROM mst_ledger"}
 ```
+
+See [docs/bi-integration.md](docs/bi-integration.md) for detailed connection guides.
+
+---
+
+## MCP Tools (22 read-only + 3 write = 25 total)
+
+### Read-Only Tools
+
+| Tool | Description |
+|---|---|
+| `get_tally_digest` | Complete business summary |
+| `get_ledger_balance` | Closing balance of any ledger |
+| `get_receivables` | Outstanding sales invoices |
+| `get_payables` | Outstanding purchase invoices |
+| `get_party_outstanding` | Full position with one party |
+| `get_sales_summary` | Sales by day/week/month/party |
+| `get_gst_summary` | GST collected, ITC, net liability |
+| `search_tally` | Search ledgers, parties, narrations |
+| `get_sync_status` | Last sync time and record counts |
+| `get_low_stock` | Items at or below quantity threshold |
+| `get_stock_aging` | Stock aging by day buckets |
+| `get_cost_center_summary` | Income/expense by cost centre |
+| `get_balance_sheet` | Balance sheet grouped by assets/liabilities |
+| `get_profit_loss` | P&L grouped by income/expense |
+| `get_ledger_account` | Voucher-level general ledger |
+| `get_stock_item_account` | Quantity movements for a stock item |
+| `query_tally_data` | Run custom SQL on local cache |
+| `get_sync_errors` | Recent sync errors |
+| `get_gstr1` | GSTR-1 outward supply data |
+| `reconcile_itc` | ITC reconciliation (GSTR-2A) |
+| `get_gstr9` | GSTR-9 annual return data |
+| `get_einvoice_status` | E-invoice IRN coverage |
+| `get_eway_bill_status` | E-Way Bill status |
+| `export_data` | Export cached data as CSV or JSON |
+| `get_audit_log` | Audit log of write operations |
+
+### Write Tools (requires `TALLYBRIDGE_ALLOW_WRITES=true`)
+
+> **Note:** Write tools are available via the Python API (`TallyBridge` client class)
+> and are planned for MCP exposure in a future release.
+
+| Tool | Description |
+|---|---|
+| `create_ledger` | Create a new ledger |
+| `create_voucher` | Create a new voucher |
+| `cancel_voucher` | Cancel a voucher by GUID |
+
+---
 
 ## Compatibility
 
@@ -344,7 +449,39 @@ tallybridge serve --port 8080
 | TallyPrime 1.x–3.x | Supported (XML only) |
 | Tally.ERP 9 | Best-effort (LEDGERENTRIES.LIST fallback) |
 
-TallyBridge auto-detects your Tally version on first sync.
+TallyBridge auto-detects your Tally version on first sync. See
+[docs/tally-setup.md](docs/tally-setup.md) for the full feature compatibility matrix.
+
+---
+
+## How It Works
+
+```
+  TallyPrime (port 9000)          Your Machine
+  ┌─────────────────┐     ┌──────────────────────┐
+  │  Accounting data │────→│  TallySyncEngine      │
+  │  (XML/JSON HTTP) │     │  TallyXMLParser       │
+  └─────────────────┘     │  TallyJSONParser       │
+                           │          │             │
+                           │          ▼             │
+                           │  tallybridge.duckdb    │
+                           │  (local, offline)      │
+                           │          │             │
+                           │    ┌─────┼──────┐      │
+                           │    │     │      │      │
+                           │  Query  MCP   HTTP API │
+                           │ (Python) (AI)  (BI)    │
+                           └──────────────────────┘
+```
+
+1. **Sync** — Pull data from TallyPrime via HTTP (XML or JSON/JSONEx on 7.0+)
+2. **Cache** — Store in local DuckDB with content hash drift detection
+3. **Query** — Read from local file — TallyPrime doesn't need to be running
+4. **Import** — Write back to TallyPrime when `TALLYBRIDGE_ALLOW_WRITES=true`
+5. **MCP** — Expose data to AI assistants via stdio or HTTP (24 tools)
+6. **Export** — CSV, Excel, JSON with audit logging
+
+---
 
 ## Development
 
@@ -357,6 +494,16 @@ uv run pytest
 
 No TallyPrime installation needed — tests use a mock HTTP server.
 
+### Optional Dependencies
+
+```bash
+pip install tallybridge[serve]    # FastAPI HTTP API bridge
+pip install tallybridge[excel]    # Excel export (openpyxl)
+pip install tallybridge[cloud]    # Supabase cloud sync (future)
+```
+
+---
+
 ## License
 
-MIT
+[MIT](LICENSE)

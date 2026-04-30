@@ -27,6 +27,10 @@ class TallyBridgeConfig(BaseSettings):
     mcp_api_key: str | None = None
     allow_writes: bool = False
 
+    query_cache_ttl: int = 300
+    slow_query_threshold: float = 1.0
+    export_chunk_size: int = 10000
+
     model_config = SettingsConfigDict(
         env_prefix="TALLYBRIDGE_",
         env_file=".env",
