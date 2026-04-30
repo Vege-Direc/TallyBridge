@@ -29,6 +29,7 @@ def mock_cache():
     cache.upsert_units.return_value = 4
     cache.upsert_stock_groups.return_value = 2
     cache.upsert_cost_centers.return_value = 3
+    cache.upsert_godowns.return_value = 3
     cache.upsert_vouchers.return_value = (7, 100)
     return cache
 
@@ -50,6 +51,8 @@ def mock_parser():
     mock_stock_group.alter_id = 50
     mock_cost_center = MagicMock()
     mock_cost_center.alter_id = 50
+    mock_godown = MagicMock()
+    mock_godown.alter_id = 50
     mock_voucher = MagicMock()
     mock_voucher.alter_id = 100
     parser.parse_ledgers.return_value = [mock_ledger] * 5
@@ -59,6 +62,7 @@ def mock_parser():
     parser.parse_units.return_value = [mock_unit] * 4
     parser.parse_stock_groups.return_value = [mock_stock_group] * 2
     parser.parse_cost_centers.return_value = [mock_cost_center] * 3
+    parser.parse_godowns.return_value = [mock_godown] * 3
     parser.parse_vouchers.return_value = [mock_voucher] * 7
     return parser
 

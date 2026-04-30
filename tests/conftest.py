@@ -11,6 +11,7 @@ from tallybridge.config import TallyBridgeConfig
 from tallybridge.connection import TallyConnection
 from tallybridge.models.master import (
     TallyCostCenter,
+    TallyGodown,
     TallyGroup,
     TallyLedger,
     TallyStockGroup,
@@ -24,6 +25,7 @@ from tallybridge.models.voucher import (
 from tallybridge.query import TallyQuery
 from tests.mock_tally import (
     SAMPLE_COST_CENTERS,
+    SAMPLE_GODOWNS,
     SAMPLE_GROUPS,
     SAMPLE_LEDGERS,
     SAMPLE_STOCK_GROUPS,
@@ -151,6 +153,11 @@ def populated_db(tmp_db):
                     cost_centre_type=cc_type,
                 )
             ]
+        )
+
+    for guid, alter_id, name, parent in SAMPLE_GODOWNS:
+        tmp_db.upsert_godowns(
+            [TallyGodown(guid=guid, alter_id=alter_id, name=name, parent=parent)]
         )
 
     for (

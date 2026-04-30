@@ -9,6 +9,7 @@ from tallybridge.cache import TallyCache
 from tallybridge.exceptions import TallyBridgeCacheError
 from tallybridge.models.master import (
     TallyCostCenter,
+    TallyGodown,
     TallyLedger,
     TallyStockGroup,
     TallyStockItem,
@@ -200,6 +201,15 @@ def test_upsert_cost_centers(db: TallyCache) -> None:
     assert count == 1
     rows = db.query("SELECT * FROM mst_cost_center WHERE guid = 'cc1'")
     assert rows[0]["name"] == "Head Office"
+
+
+def test_upsert_godowns(db: TallyCache) -> None:
+    g = TallyGodown(name="Main Store", guid="gd1", alter_id=1, parent=None)
+    count = db.upsert_godowns([g])
+    assert count == 1
+    rows = db.query("SELECT * FROM mst_godown WHERE guid = 'gd1'")
+    assert rows[0]["name"] == "Main Store"
+    assert rows[0]["parent"] is None
 
 
 def test_get_ledger_found(db: TallyCache) -> None:

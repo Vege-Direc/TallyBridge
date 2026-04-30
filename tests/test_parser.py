@@ -6,6 +6,7 @@ from decimal import Decimal
 from tallybridge.parser import TallyJSONParser, TallyXMLParser
 from tests.mock_tally import (
     SAMPLE_COST_CENTERS_JSON,
+    SAMPLE_GODOWNS_JSON,
     SAMPLE_GROUPS_JSON,
     SAMPLE_LEDGERS_JSON,
     SAMPLE_STOCK_GROUPS_JSON,
@@ -14,6 +15,7 @@ from tests.mock_tally import (
     SAMPLE_VOUCHER_TYPES_JSON,
     SAMPLE_VOUCHERS_JSON,
     build_cost_center_xml,
+    build_godown_xml,
     build_group_xml,
     build_ledger_xml,
     build_stock_group_xml,
@@ -145,6 +147,17 @@ def test_parse_cost_centers() -> None:
     xml = build_cost_center_xml()
     centers = parser.parse_cost_centers(xml)
     assert len(centers) >= 3
+
+
+def test_parse_godowns() -> None:
+    xml = build_godown_xml()
+    godowns = parser.parse_godowns(xml)
+    assert len(godowns) >= 3
+    main = [g for g in godowns if g.name == "Main Store"][0]
+    assert main.guid == "guid-gd-001"
+    assert main.parent is None
+    mumbai = [g for g in godowns if g.name == "Mumbai Warehouse"][0]
+    assert mumbai.parent == "Main Store"
 
 
 def test_parse_malformed_xml_returns_empty() -> None:
@@ -1282,6 +1295,14 @@ class TestJSONParserCostCenters:
         assert len(centers) >= 1
         assert centers[0].name == "Head Office"
         assert centers[0].cost_centre_type == "Primary"
+
+
+class TestJSONParserGodowns:
+    def test_parse_godowns_json(self) -> None:
+        godowns = json_parser.parse_godowns_json(SAMPLE_GODOWNS_JSON)
+        assert len(godowns) >= 1
+        assert godowns[0].name == "Main Store"
+        assert godowns[0].guid == "guid-gd-001"
 
 
 class TestJSONParserVoucherTypes:

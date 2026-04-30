@@ -408,6 +408,17 @@ class TallyQuery:
             )
         return result
 
+    def get_godown_summary(
+        self, company: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return all godowns with parent hierarchy."""
+        sql = "SELECT guid, name, parent FROM mst_godown"
+        params: list[str] = []
+        if company:
+            sql += " WHERE company = ?"
+            params.append(company)
+        return self._cache.query(sql, params)
+
     def search(self, query: str, limit: int = 20) -> dict[str, Any]:
         """Search across ledger names, party names, narrations with fuzzy matching.
 

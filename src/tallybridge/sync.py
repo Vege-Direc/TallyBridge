@@ -81,6 +81,10 @@ ENTITY_CONFIG: dict[str, dict[str, Any]] = {
         "tally_type": "CostCentre",
         "fields": ["NAME", "GUID", "ALTERID", "PARENT", "EMAIL", "COSTCENTRETYPE"],
     },
+    "godown": {
+        "tally_type": "Godown",
+        "fields": ["NAME", "GUID", "ALTERID", "PARENT"],
+    },
     "voucher": {
         "tally_type": "Voucher",
         # NOTE: LEDGERENTRIES and INVENTORYENTRIES are TDL collection references,
@@ -118,6 +122,7 @@ SYNC_ORDER: list[str] = [
     "stock_group",
     "stock_item",
     "cost_center",
+    "godown",
     "voucher",
 ]
 VOUCHER_BATCH_SIZE = 5000
@@ -471,6 +476,7 @@ class TallySyncEngine:
                 "unit": "mst_unit",
                 "stock_group": "mst_stock_group",
                 "cost_center": "mst_cost_center",
+                "godown": "mst_godown",
                 "voucher": "trn_voucher",
             }
             table = table_map.get(entity_type)
@@ -632,6 +638,7 @@ class TallySyncEngine:
             "unit": self._parser.parse_units,
             "stock_group": self._parser.parse_stock_groups,
             "cost_center": self._parser.parse_cost_centers,
+            "godown": self._parser.parse_godowns,
             "voucher": self._parser.parse_vouchers,
         }
         parse_fn = parse_map.get(entity_type)
@@ -654,6 +661,7 @@ class TallySyncEngine:
             "unit": json_parser.parse_units_json,
             "stock_group": json_parser.parse_stock_groups_json,
             "cost_center": json_parser.parse_cost_centers_json,
+            "godown": json_parser.parse_godowns_json,
             "voucher": json_parser.parse_vouchers_json,
         }
         parse_fn = parse_map.get(entity_type)
@@ -674,6 +682,7 @@ class TallySyncEngine:
             "unit": self._cache.upsert_units,
             "stock_group": self._cache.upsert_stock_groups,
             "cost_center": self._cache.upsert_cost_centers,
+            "godown": self._cache.upsert_godowns,
             "voucher": self._cache.upsert_vouchers,
         }
         upsert_fn = upsert_map.get(entity_type)

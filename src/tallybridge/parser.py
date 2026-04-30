@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 from tallybridge.models.master import (
     TallyCostCenter,
+    TallyGodown,
     TallyGroup,
     TallyLedger,
     TallyStockGroup,
@@ -300,6 +301,28 @@ class TallyXMLParser:
             except Exception as exc:
                 logger.warning("Failed to parse cost centre element: {}", exc)
         return centers
+
+    def parse_godowns(self, xml: str) -> list[TallyGodown]:
+        """Parse Godown collection XML into TallyGodown models."""
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError as exc:
+            logger.warning("Failed to parse godown XML: {}", exc)
+            return []
+
+        godowns: list[TallyGodown] = []
+        for elem in root.iter("GODOWN"):
+            try:
+                godown = TallyGodown(
+                    name=self.get_text(elem, "NAME"),
+                    guid=self.get_text(elem, "GUID"),
+                    alter_id=int(self.get_text(elem, "ALTERID", "0")),
+                    parent=self.get_text(elem, "PARENT") or None,
+                )
+                godowns.append(godown)
+            except Exception as exc:
+                logger.warning("Failed to parse godown element: {}", exc)
+        return godowns
 
     def parse_vouchers(self, xml: str) -> list[TallyVoucher]:
         """Parse voucher collection XML.
@@ -1208,6 +1231,25 @@ class TallyJSONParser:
             except Exception as exc:
                 logger.warning("Failed to parse cost centre JSON: {}", exc)
         return centers
+
+    def parse_godowns_json(self, data: dict[str, Any]) -> list[TallyGodown]:
+        messages = self._get_tally_messages(data)
+        godowns: list[TallyGodown] = []
+        for msg in messages:
+            godown_data = msg.get("godown")
+            if godown_data is None:
+                continue
+            try:
+                godown = TallyGodown(
+                    name=self._get_val(godown_data, "name"),
+                    guid=self._get_val(godown_data, "guid"),
+                    alter_id=int(self._get_val(godown_data, "alterid", "0")),
+                    parent=self._get_val(godown_data, "parent") or None,
+                )
+                godowns.append(godown)
+            except Exception as exc:
+                logger.warning("Failed to parse godown JSON: {}", exc)
+        return godowns
 
     def parse_vouchers_json(self, data: dict[str, Any]) -> list[TallyVoucher]:
         messages = self._get_tally_messages(data)

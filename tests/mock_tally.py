@@ -118,6 +118,12 @@ SAMPLE_COST_CENTERS = [
     ("guid-cc-003", 402, "Delhi Branch", "Primary", "Sub"),
 ]
 
+SAMPLE_GODOWNS = [
+    ("guid-gd-001", 410, "Main Store", None),
+    ("guid-gd-002", 411, "Mumbai Warehouse", "Main Store"),
+    ("guid-gd-003", 412, "Delhi Warehouse", "Main Store"),
+]
+
 SAMPLE_VOUCHERS = [
     (
         "guid-v-001",
@@ -352,6 +358,21 @@ def build_cost_center_xml(cost_centers: list | None = None) -> str:
         lines.append(f"<PARENT>{parent}</PARENT>")
         lines.append(f"<COSTCENTRETYPE>{cc_type}</COSTCENTRETYPE>")
         lines.append("</COSTCENTRE>")
+    lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
+    return "".join(lines)
+
+
+def build_godown_xml(godowns: list | None = None) -> str:
+    """Return Tally-format XML for godown collection."""
+    godowns = godowns or SAMPLE_GODOWNS
+    lines = ["<ENVELOPE><BODY><DATA><TALLYMESSAGE>"]
+    for guid, alter_id, name, parent in godowns:
+        lines.append(f'<GODOWN NAME="{name}" GUID="{guid}">')
+        lines.append(f"<ALTERID>{alter_id}</ALTERID>")
+        lines.append(f"<NAME>{name}</NAME>")
+        if parent:
+            lines.append(f"<PARENT>{parent}</PARENT>")
+        lines.append("</GODOWN>")
     lines.append("</TALLYMESSAGE></DATA></BODY></ENVELOPE>")
     return "".join(lines)
 
@@ -779,6 +800,22 @@ SAMPLE_COST_CENTERS_JSON: dict[str, Any] = {
     },
 }
 
+SAMPLE_GODOWNS_JSON: dict[str, Any] = {
+    "status": "1",
+    "data": {
+        "tallymessage": [
+            {
+                "godown": {
+                    "name": "Main Store",
+                    "guid": "guid-gd-001",
+                    "alterid": "410",
+                    "parent": "",
+                }
+            },
+        ]
+    },
+}
+
 SAMPLE_VOUCHER_TYPES_JSON: dict[str, Any] = {
     "status": "1",
     "data": {
@@ -836,6 +873,8 @@ def setup_mock_routes(httpserver) -> None:
             resp_xml = build_stock_item_xml()
         elif ">CostCentre<" in xml_body:
             resp_xml = build_cost_center_xml()
+        elif ">Godown<" in xml_body:
+            resp_xml = build_godown_xml()
         elif ">Voucher<" in xml_body:
             resp_xml = build_voucher_xml()
         elif "Import Data" in xml_body:
@@ -895,6 +934,8 @@ def setup_mock_routes(httpserver) -> None:
                 resp = SAMPLE_UNITS_JSON
             elif "costcentre" in tally_id.lower():
                 resp = SAMPLE_COST_CENTERS_JSON
+            elif "godown" in tally_id.lower():
+                resp = SAMPLE_GODOWNS_JSON
             elif "vouchertype" in tally_id.lower():
                 resp = SAMPLE_VOUCHER_TYPES_JSON
             elif "voucher" in tally_id.lower():
@@ -923,6 +964,9 @@ def setup_mock_routes(httpserver) -> None:
                             break
                         elif "costcentre" in t:
                             resp = SAMPLE_COST_CENTERS_JSON
+                            break
+                        elif "godown" in t:
+                            resp = SAMPLE_GODOWNS_JSON
                             break
                         elif "vouchertype" in t:
                             resp = SAMPLE_VOUCHER_TYPES_JSON

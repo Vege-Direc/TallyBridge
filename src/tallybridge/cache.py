@@ -12,6 +12,7 @@ from loguru import logger
 from tallybridge.exceptions import TallyBridgeCacheError
 from tallybridge.models.master import (
     TallyCostCenter,
+    TallyGodown,
     TallyGroup,
     TallyLedger,
     TallyStockGroup,
@@ -102,6 +103,14 @@ CREATE TABLE IF NOT EXISTS mst_cost_center (
     email             TEXT,
     cost_centre_type  TEXT DEFAULT 'Primary',
     synced_at         TIMESTAMP DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS mst_godown (
+    guid       TEXT PRIMARY KEY,
+    alter_id   INTEGER NOT NULL,
+    name       TEXT NOT NULL,
+    parent     TEXT,
+    synced_at  TIMESTAMP DEFAULT current_timestamp
 );
 
 CREATE TABLE IF NOT EXISTS trn_voucher (
@@ -219,6 +228,12 @@ ALTER TABLE mst_cost_center ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
     error_message TEXT NOT NULL,
     created_at  TIMESTAMP DEFAULT current_timestamp
 );""",
+    ),
+    (
+        6,
+        "add company and content_hash columns to mst_godown",
+        """ALTER TABLE mst_godown ADD COLUMN IF NOT EXISTS company TEXT;
+ALTER TABLE mst_godown ADD COLUMN IF NOT EXISTS content_hash TEXT;""",
     ),
 ]
 
@@ -554,6 +569,27 @@ class TallyCache:
         )
         return len(centers)
 
+    def upsert_godowns(self, godowns: list[TallyGodown]) -> int:
+        if not godowns:
+            return 0
+        rows = [
+            (
+                g.guid,
+                g.alter_id,
+                g.name,
+                g.parent,
+                _compute_content_hash(g.name, g.parent),
+            )
+            for g in godowns
+        ]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO mst_godown
+            (guid, alter_id, name, parent, content_hash)
+            VALUES (?, ?, ?, ?, ?)""",
+            rows,
+        )
+        return len(godowns)
+
     def upsert_vouchers(
         self, vouchers: list[TallyVoucher], company: str | None = None
     ) -> tuple[int, int]:
@@ -816,6 +852,7 @@ class TallyCache:
             "mst_unit",
             "mst_stock_group",
             "mst_cost_center",
+            "mst_godown",
             "trn_voucher",
             "trn_cost_centre",
             "trn_bill",
@@ -922,6 +959,7 @@ class TallyCache:
             "unit": {"table": "mst_unit", "name_col": "name"},
             "stock_group": {"table": "mst_stock_group", "name_col": "name"},
             "cost_center": {"table": "mst_cost_center", "name_col": "name"},
+            "godown": {"table": "mst_godown", "name_col": "name"},
         }
         cfg = hash_configs.get(entity_type)
         if cfg is None:
@@ -1040,6 +1078,7 @@ class TallyCache:
             "unit": "mst_unit",
             "stock_group": "mst_stock_group",
             "cost_center": "mst_cost_center",
+            "godown": "mst_godown",
             "voucher": "trn_voucher",
         }
         table = table_map.get(entity_type)
@@ -1072,6 +1111,7 @@ class TallyCache:
             "unit": "mst_unit",
             "stock_group": "mst_stock_group",
             "cost_center": "mst_cost_center",
+            "godown": "mst_godown",
             "voucher": "trn_voucher",
         }
         table = table_map.get(entity_type)
