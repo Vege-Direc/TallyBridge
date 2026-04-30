@@ -413,6 +413,21 @@ class TallyXMLParser:
                     exchange_rate=self._parse_optional_amount(
                         self.get_text(elem, "EXCHANGERATE")
                     ),
+                    irn=self.get_text(elem, "IRN") or None,
+                    ack_number=self.get_text(elem, "ACKNO") or None,
+                    ack_date=self.parse_date(self.get_text(elem, "ACKDT")),
+                    qr_code=self.get_text(elem, "QRCODE") or None,
+                    is_einvoice=self.parse_bool(self.get_text(elem, "ISEINVOICE")),
+                    eway_bill_number=self.get_text(elem, "EWAYBILLNUMBER") or None,
+                    eway_bill_date=self.parse_date(self.get_text(elem, "EWAYBILLDATE")),
+                    eway_valid_till=self.parse_date(
+                        self.get_text(elem, "EWAYVALIDTILL")
+                    ),
+                    transporter_name=self.get_text(elem, "TRANSPORTERNAME") or None,
+                    vehicle_number=self.get_text(elem, "VEHICLENUMBER") or None,
+                    distance_km=int(self.get_text(elem, "DISTANCEINKM", "0"))
+                    if self.get_text(elem, "DISTANCEINKM")
+                    else None,
                 )
                 vouchers.append(voucher)
             except Exception as exc:
@@ -1502,6 +1517,25 @@ class TallyJSONParser:
                     exchange_rate=TallyXMLParser._parse_optional_amount(
                         self._get_val(v_data, "exchangerate")
                     ),
+                    irn=self._get_val(v_data, "irn") or None,
+                    ack_number=self._get_val(v_data, "ackno") or None,
+                    ack_date=TallyXMLParser.parse_date(self._get_val(v_data, "ackdt")),
+                    qr_code=self._get_val(v_data, "qrcode") or None,
+                    is_einvoice=TallyXMLParser.parse_bool(
+                        self._get_val(v_data, "iseinvoice")
+                    ),
+                    eway_bill_number=self._get_val(v_data, "ewaybillnumber") or None,
+                    eway_bill_date=TallyXMLParser.parse_date(
+                        self._get_val(v_data, "ewaybilldate")
+                    ),
+                    eway_valid_till=TallyXMLParser.parse_date(
+                        self._get_val(v_data, "ewayvalidtill")
+                    ),
+                    transporter_name=self._get_val(v_data, "transportername") or None,
+                    vehicle_number=self._get_val(v_data, "vehiclenumber") or None,
+                    distance_km=int(self._get_val(v_data, "distanceinkm", "0"))
+                    if self._get_val(v_data, "distanceinkm")
+                    else None,
                 )
                 vouchers.append(voucher)
             except Exception as exc:

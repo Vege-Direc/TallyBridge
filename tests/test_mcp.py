@@ -492,7 +492,7 @@ def test_mcp_server_has_20_tools() -> None:
     from tallybridge.mcp.sdk_server import mcp
 
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 20
+    assert len(tools) == 22
 
 
 def test_mcp_lifespan_creates_context() -> None:

@@ -1060,7 +1060,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(gstr1): add GSTR-1 outward supply report fetching and parsing
   ```
 
-- [ ] **12b · Add Godown entity to sync pipeline** — `TallyGodown` model
+- [x] **12b · Add Godown entity to sync pipeline** — `TallyGodown` model
   exists but is never synced (missing from `ENTITY_CONFIG` and `SYNC_ORDER`).
   Godown names in inventory entries cannot be resolved. Add:
   1. `"godown"` entry to `ENTITY_CONFIG` with fields `NAME, GUID, ALTERID, PARENT`
@@ -1074,7 +1074,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(sync): add Godown entity to sync pipeline with cache table
   ```
 
-- [ ] **12c · Add TallyBridge unified client (read + write)** — `connect()`
+- [x] **12c · Add TallyBridge unified client (read + write)** — `connect()`
   returns `TallyQuery` (read-only). Write-back requires manual
   `TallyConnection` construction. Create a `TallyBridge` class that:
   1. Wraps `TallyCache`, `TallyConnection`, `TallySyncEngine`, `TallyQuery`
@@ -1092,7 +1092,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
 
 ### Phase 12B — P1: Professional Use Enhancements
 
-- [ ] **12d · Add pre-write validation layer** — `build_voucher_xml()`
+- [x] **12d · Add pre-write validation layer** — `build_voucher_xml()`
   generates XML referencing ledgers that may not exist in Tally. Add
   `validate_voucher()` and `validate_ledger()` methods to `TallyBridge`
   that check the local cache before posting. Checks: ledger existence,
@@ -1105,7 +1105,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(validate): add pre-write validation for voucher and ledger creation
   ```
 
-- [ ] **12e · Add GSTR-2A/2B ITC reconciliation** — ITC reconciliation is
+- [x] **12e · Add GSTR-2A/2B ITC reconciliation** — ITC reconciliation is
   the second most common GST workflow. Add:
   1. `GSTR2AClaim` and `ReconciliationResult` models
   2. `TallyConnection.fetch_gstr2a()` method
@@ -1117,7 +1117,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(gst): add GSTR-2A/2B ITC reconciliation support
   ```
 
-- [ ] **12f · Add multi-currency fields to voucher model** — Import/export
+- [x] **12f · Add multi-currency fields to voucher model** — Import/export
   businesses need forex gain/loss tracking. Add `currency`, `forex_amount`,
   `exchange_rate` to `TallyVoucher` and `TallyVoucherEntry`. Update
   `ENTITY_CONFIG` voucher fields. Update cache schema (migration 7).
@@ -1129,7 +1129,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
 
 ### Phase 12C — P2: Advanced Features & Documentation
 
-- [ ] **12g · Add GSTR-9 annual return support** — GSTR-9 is required
+- [x] **12g · Add GSTR-9 annual return support** — GSTR-9 is required
   annually. Add `GSTR9Result` model, `fetch_gstr9()`, `parse_gstr9()`,
   and MCP tool. Follow the same pattern as GSTR-1 and GSTR-3B.
   ```
@@ -1137,7 +1137,7 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: feat(gst): add GSTR-9 annual return support
   ```
 
-- [ ] **12h · Update README and docs for Phase 12 features** — Add:
+- [x] **12h · Update README and docs for Phase 12 features** — Add:
   1. GSTR-1, GSTR-2A, GSTR-9 examples in Python API section
   2. Godown sync note
   3. `TallyBridge` unified client examples (read + write)
@@ -1149,9 +1149,155 @@ and the TallyPrime API Explorer at `https://tallysolutions.com/tallyprime-api-ex
   commit: docs: update README and docs for Phase 12 features
   ```
 
-- [ ] **12i · Final quality gate** — Ensure all Phase 12 code passes:
+- [x] **12i · Final quality gate** — Ensure all Phase 12 code passes:
   ```
   uv run mypy src/              # 0 errors
   uv run ruff check src/ tests/ # All checks passed
   uv run pytest tests/ --cov=src/tallybridge --cov-fail-under=90 -q
+  ```
+
+---
+
+## Phase 13 — E-Invoice, Data Export & Cloud Sync (v1.1)
+
+> **Source:** Ecosystem research on e-invoice/e-Way Bill requirements (mandatory for Indian
+> businesses with >₹5cr turnover), competitor analysis (tally-integration PyPI package),
+> and gap analysis of existing TallyBridge features.
+> **Gate:** Phase 13A (P0 — E-Invoice & Data Access) must complete before Phase 13B.
+> **Spec:** Each task references a SPECS.md §32–§38 section (to be added).
+
+### Phase 13A — P0: E-Invoice & E-Way Bill Data Access
+
+- [x] **13a · Add e-invoice data fields to voucher model** — TallyPrime stores
+  IRN (Invoice Reference Number), QR code, ACK number, and ACK date on each
+  sales invoice that has been e-invoiced. These fields are critical for
+  compliance verification and audit. Add:
+  1. `irn`, `ack_number`, `ack_date`, `qr_code`, `is_einvoice` fields to `TallyVoucher`
+  2. Update `ENTITY_CONFIG` voucher fields with `IRN`, `ACKNO`, `ACKDT`, `QRCODE`, `ISEINVOICE`
+  3. Add parser support for these fields (XML tag names may vary by Tally version)
+  4. Add cache migration (8) for new columns on `trn_voucher`
+  5. Add `get_einvoice_summary()` method to `TallyQuery`
+  6. Add `get_einvoice_status` MCP tool
+  Spec: SPECS.md §32.
+  ```
+  verify: uv run pytest tests/test_parser.py tests/test_cache.py tests/test_models.py -v
+  commit: feat(einvoice): add e-invoice IRN/QR/ACK fields to voucher model
+  ```
+
+- [x] **13b · Add e-Way Bill data fields to voucher model** — E-Way Bills are
+  required for movement of goods exceeding ₹50,000. TallyPrime stores EWB
+  number, date, validity, and vehicle/transporter details. Add:
+  1. `eway_bill_number`, `eway_bill_date`, `eway_valid_till`, `transporter_name`,
+     `vehicle_number`, `distance_km` fields to `TallyVoucher`
+  2. Update `ENTITY_CONFIG` voucher fields
+  3. Add parser support for e-Way Bill tags
+  4. Add cache migration (9) for e-Way Bill columns on `trn_voucher`
+  5. Add `get_eway_bill_summary()` method to `TallyQuery`
+  6. Add `get_eway_bill_status` MCP tool
+  Spec: SPECS.md §33.
+  ```
+  verify: uv run pytest tests/test_parser.py tests/test_cache.py tests/test_query.py -v
+  commit: feat(ewaybill): add e-Way Bill fields to voucher model
+  ```
+
+- [x] **13c · Add e-invoice JSON export builder** — For the offline e-invoicing
+  workflow, businesses need to export invoices in the IRP-compliant JSON format.
+  TallyBridge should build the JSON payload from voucher data so users can:
+  1. Validate invoice data before submission to IRP
+  2. Export batch invoices for offline IRP upload
+  3. Pre-fill e-invoice fields from Tally data
+  Add `EInvoiceBuilder` class with `build_einvoice_json(voucher)` method.
+  Follow NIC's e-invoice JSON schema (version 1.1).
+  Spec: SPECS.md §34.
+  ```
+  verify: uv run pytest tests/test_einvoice.py -v
+  commit: feat(einvoice): add IRP-compliant JSON export builder
+  ```
+
+### Phase 13B — P1: Data Export & Audit
+
+- [ ] **13d · Add data export module (CSV, Excel, JSON)** — Users need to
+  export cached Tally data for analysis, sharing, and backup. Add:
+  1. `src/tallybridge/export.py` with `DataExporter` class
+  2. `export_csv(table, path, filters)` — Export any cache table to CSV
+  3. `export_excel(tables, path)` — Export multiple tables to Excel sheets
+  4. `export_json(table, path, filters)` — Export as JSON
+  5. CLI commands: `tallybridge export csv --table ledgers --output ledgers.csv`
+  6. MCP tool: `export_data` for on-demand export
+  Spec: SPECS.md §35.
+  ```
+  verify: uv run pytest tests/test_export.py -v
+  commit: feat(export): add CSV/Excel/JSON data export module
+  ```
+
+- [ ] **13e · Add audit logging for write operations** — Track all data
+  modifications for compliance and debugging. Add:
+  1. `audit_log` table in cache schema (migration 10): timestamp, operation,
+     entity_type, entity_guid, user, details_json
+  2. `log_audit()` method on `TallyCache`
+  3. Auto-log all `import_masters()`, `import_vouchers()`, `create_*()`,
+     `cancel_voucher()` operations
+  4. `get_audit_log()` query method with date/entity filters
+  5. `get_audit_log` MCP tool
+  Spec: SPECS.md §36.
+  ```
+  verify: uv run pytest tests/test_cache.py tests/test_mcp.py -v
+  commit: feat(audit): add audit logging for all write operations
+  ```
+
+- [ ] **13f · Add scheduled report generation** — Businesses need automated
+  daily/weekly/monthly reports. Add:
+  1. `src/tallybridge/reports.py` with `ReportScheduler` class
+  2. Template-based report generation (daily digest, GST summary, receivables)
+  3. `add_schedule(report_type, frequency, output_format, output_path)` method
+  4. CLI commands: `tallybridge report schedule --type daily --frequency daily`
+  5. Integration with `run_continuous()` for periodic report generation
+  6. Optional email alerts (SMTP config in settings)
+  Spec: SPECS.md §37.
+  ```
+  verify: uv run pytest tests/test_reports.py -v
+  commit: feat(reports): add scheduled report generation
+  ```
+
+### Phase 13C — P2: Cloud Sync & Polish
+
+- [ ] **13g · Implement Supabase cloud sync** — Replace the `cloud/supabase.py`
+  stub with a working cloud sync module. Add:
+  1. `CloudSync` class with incremental upload/download
+  2. Conflict resolution strategy (last-write-wins with audit trail)
+  3. Multi-device sync via Supabase Realtime
+  4. Auth integration with Supabase Auth
+  5. `tallybridge cloud sync` CLI command
+  6. Rate limiting and retry logic
+  Spec: SPECS.md §38.
+  ```
+  verify: uv run pytest tests/test_cloud.py -v
+  commit: feat(cloud): implement Supabase cloud sync
+  ```
+
+- [ ] **13h · Performance optimization for large datasets** — Optimize for
+  companies with 100k+ vouchers:
+  1. Streaming/lazy loading for large query results
+  2. Chunked export for CSV/Excel (avoid loading all data in memory)
+  3. Connection pooling improvements
+  4. Add query result caching with configurable TTL
+  5. Add `EXPLAIN ANALYZE` to slow query logging
+  6. Benchmark suite in `tests/bench/`
+  ```
+  verify: uv run pytest tests/ -v
+  commit: perf: optimize for large dataset handling
+  ```
+
+- [ ] **13i · Final quality gate and documentation** — Ensure all Phase 13
+  code passes quality checks and update all documentation:
+  1. `mypy src/` — 0 errors
+  2. `ruff check src/ tests/` — All checks passed
+  3. `pytest tests/ --cov=src/tallybridge --cov-fail-under=90` — 90%+ coverage
+  4. Update README.md with e-invoice, e-Way Bill, export, cloud sync sections
+  5. Update CHANGELOG.md with Phase 13 entries
+  6. Update SPECS.md with §32–§38 sections
+  7. Update `pyproject.toml` version to `1.1.0`
+  ```
+  verify: uv run mypy src/ && uv run ruff check src/ tests/ && uv run pytest tests/ --cov=src/tallybridge --cov-fail-under=90 -q
+  commit: docs: finalize Phase 13 documentation and quality gate
   ```

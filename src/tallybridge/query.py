@@ -17,6 +17,17 @@ from tallybridge.models.report import (
 from tallybridge.models.voucher import TallyVoucher
 
 
+def _parse_date_field(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
 class TallyQuery:
     def __init__(self, cache: TallyCache) -> None:
         self._cache = cache
@@ -384,6 +395,93 @@ class TallyQuery:
         )
         return result
 
+    def get_einvoice_summary(self, from_date: date, to_date: date) -> dict[str, Any]:
+        """Summary of e-invoiced and non-e-invoiced sales for the period."""
+        total_rows = self._cache.query(
+            """SELECT COUNT(*) as cnt FROM trn_voucher
+            WHERE voucher_type IN ('Sales', 'Credit Note')
+            AND is_cancelled = false AND is_void = false
+            AND date BETWEEN ? AND ?""",
+            [str(from_date), str(to_date)],
+        )
+        einv_rows = self._cache.query(
+            """SELECT COUNT(*) as cnt FROM trn_voucher
+            WHERE voucher_type IN ('Sales', 'Credit Note')
+            AND is_cancelled = false AND is_void = false
+            AND is_einvoice = true
+            AND date BETWEEN ? AND ?""",
+            [str(from_date), str(to_date)],
+        )
+        missing_rows = self._cache.query(
+            """SELECT guid, voucher_number, date, party_ledger, total_amount
+            FROM trn_voucher
+            WHERE voucher_type IN ('Sales', 'Credit Note')
+            AND is_cancelled = false AND is_void = false
+            AND (irn IS NULL OR irn = '')
+            AND date BETWEEN ? AND ?
+            ORDER BY date DESC""",
+            [str(from_date), str(to_date)],
+        )
+        total = total_rows[0]["cnt"] if total_rows else 0
+        einv = einv_rows[0]["cnt"] if einv_rows else 0
+        return {
+            "total_sales_invoices": total,
+            "einvoiced_count": einv,
+            "not_einvoiced_count": total - einv,
+            "missing_irn": missing_rows,
+        }
+
+    def get_eway_bill_summary(self, from_date: date, to_date: date) -> dict[str, Any]:
+        """Summary of e-Way Bills for the period."""
+        total_rows = self._cache.query(
+            """SELECT COUNT(*) as cnt FROM trn_voucher
+            WHERE eway_bill_number IS NOT NULL AND eway_bill_number != ''
+            AND is_cancelled = false AND is_void = false
+            AND date BETWEEN ? AND ?""",
+            [str(from_date), str(to_date)],
+        )
+        active_rows = self._cache.query(
+            """SELECT COUNT(*) as cnt FROM trn_voucher
+            WHERE eway_bill_number IS NOT NULL AND eway_bill_number != ''
+            AND is_cancelled = false AND is_void = false
+            AND eway_valid_till >= ?
+            AND date BETWEEN ? AND ?""",
+            [str(date.today()), str(from_date), str(to_date)],
+        )
+        expired_rows = self._cache.query(
+            """SELECT COUNT(*) as cnt FROM trn_voucher
+            WHERE eway_bill_number IS NOT NULL AND eway_bill_number != ''
+            AND is_cancelled = false AND is_void = false
+            AND eway_valid_till < ?
+            AND date BETWEEN ? AND ?""",
+            [str(date.today()), str(from_date), str(to_date)],
+        )
+        expiring_rows = self._cache.query(
+            """SELECT guid, voucher_number, date, eway_bill_number,
+                      eway_valid_till, party_ledger, total_amount
+            FROM trn_voucher
+            WHERE eway_bill_number IS NOT NULL AND eway_bill_number != ''
+            AND is_cancelled = false AND is_void = false
+            AND eway_valid_till BETWEEN ? AND ?
+            AND date BETWEEN ? AND ?
+            ORDER BY eway_valid_till""",
+            [
+                str(date.today()),
+                str(date.fromordinal(date.today().toordinal() + 1)),
+                str(from_date),
+                str(to_date),
+            ],
+        )
+        total = total_rows[0]["cnt"] if total_rows else 0
+        active = active_rows[0]["cnt"] if active_rows else 0
+        expired = expired_rows[0]["cnt"] if expired_rows else 0
+        return {
+            "total_eway_bills": total,
+            "active_bills": active,
+            "expired_bills": expired,
+            "expiring_soon": expiring_rows,
+        }
+
     def get_cost_center_summary(
         self,
         from_date: date,
@@ -556,6 +654,19 @@ class TallyQuery:
             else None,
             base_currency_amount=Decimal(str(r.get("base_currency_amount")))
             if r.get("base_currency_amount") is not None
+            else None,
+            irn=r.get("irn"),
+            ack_number=r.get("ack_number"),
+            ack_date=_parse_date_field(r.get("ack_date")),
+            qr_code=r.get("qr_code"),
+            is_einvoice=bool(r.get("is_einvoice")),
+            eway_bill_number=r.get("eway_bill_number"),
+            eway_bill_date=_parse_date_field(r.get("eway_bill_date")),
+            eway_valid_till=_parse_date_field(r.get("eway_valid_till")),
+            transporter_name=r.get("transporter_name"),
+            vehicle_number=r.get("vehicle_number"),
+            distance_km=int(str(r.get("distance_km")))
+            if r.get("distance_km") is not None
             else None,
         )
 

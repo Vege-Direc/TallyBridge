@@ -196,7 +196,7 @@ print(q.search("cash"))
 - **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
 - **Query** reads from the local file — TallyPrime doesn't need to be running
 - **Import** write back to TallyPrime (masters and vouchers) when `TALLYBRIDGE_ALLOW_WRITES=true`
-- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (20 tools)
+- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (22 tools)
 
 ## TallyBridge Unified Client
 

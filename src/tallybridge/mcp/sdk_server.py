@@ -408,6 +408,40 @@ async def get_gstr9(
         await conn.close()
 
 
+@mcp.tool()
+async def get_einvoice_status(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """E-invoice compliance status — IRN coverage and missing invoices."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    try:
+        fd = date_type.fromisoformat(from_date)
+        td = date_type.fromisoformat(to_date)
+    except ValueError:
+        return {"error": True, "message": "Invalid date format. Use YYYY-MM-DD."}
+    return _serialize(app_ctx.query.get_einvoice_summary(fd, td))
+
+
+@mcp.tool()
+async def get_eway_bill_status(
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+    ctx: _Ctx | None = None,
+) -> Any:
+    """E-Way Bill status — active, expired, and expiring bills."""
+    app_ctx = _get_app_ctx(ctx)  # type: ignore[arg-type]
+    try:
+        fd = date_type.fromisoformat(from_date)
+        td = date_type.fromisoformat(to_date)
+    except ValueError:
+        return {"error": True, "message": "Invalid date format. Use YYYY-MM-DD."}
+    return _serialize(app_ctx.query.get_eway_bill_summary(fd, td))
+
+
 def main() -> None:
     """Entry point for the tallybridge-mcp console script.
 

@@ -67,3 +67,14 @@ class TallyVoucher(BaseModel):
     forex_amount: Decimal | None = None
     exchange_rate: Decimal | None = None
     base_currency_amount: Decimal | None = None
+    irn: str | None = None
+    ack_number: str | None = None
+    ack_date: date_type | None = None
+    qr_code: str | None = None
+    is_einvoice: bool = False
+    eway_bill_number: str | None = None
+    eway_bill_date: date_type | None = None
+    eway_valid_till: date_type | None = None
+    transporter_name: str | None = None
+    vehicle_number: str | None = None
+    distance_km: int | None = None

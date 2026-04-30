@@ -243,6 +243,25 @@ ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS forex_amount DECIMAL(18,4);
 ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS exchange_rate DECIMAL(18,4);
 ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS base_currency_amount DECIMAL(18,4);""",
     ),
+    (
+        8,
+        "add e-invoice fields to trn_voucher",
+        """ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS irn TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS ack_number TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS ack_date DATE;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS qr_code TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS is_einvoice BOOLEAN DEFAULT false;""",
+    ),
+    (
+        9,
+        "add e-way bill fields to trn_voucher",
+        """ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS eway_bill_number TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS eway_bill_date DATE;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS eway_valid_till DATE;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS transporter_name TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS vehicle_number TEXT;
+ALTER TABLE trn_voucher ADD COLUMN IF NOT EXISTS distance_km INTEGER;""",
+    ),
 ]
 
 VIEWS_SQL = """
@@ -635,8 +654,12 @@ class TallyCache:
                      party_gstin, place_of_supply, due_date, entered_by,
                      is_cancelled, is_optional, is_postdated, is_void,
                      total_amount, gst_amount, company, currency,
-                     forex_amount, exchange_rate, base_currency_amount)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     forex_amount, exchange_rate, base_currency_amount,
+                     irn, ack_number, ack_date, qr_code, is_einvoice,
+                     eway_bill_number, eway_bill_date, eway_valid_till,
+                     transporter_name, vehicle_number, distance_km)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                             ?,?,?,?,?,?,?,?,?,?,?,?)""",
                     [
                         voucher.guid,
                         voucher.alter_id,
@@ -662,6 +685,19 @@ class TallyCache:
                         voucher.forex_amount,
                         voucher.exchange_rate,
                         voucher.base_currency_amount,
+                        voucher.irn,
+                        voucher.ack_number,
+                        str(voucher.ack_date) if voucher.ack_date else None,
+                        voucher.qr_code,
+                        voucher.is_einvoice,
+                        voucher.eway_bill_number,
+                        str(voucher.eway_bill_date) if voucher.eway_bill_date else None,
+                        str(voucher.eway_valid_till)
+                        if voucher.eway_valid_till
+                        else None,
+                        voucher.transporter_name,
+                        voucher.vehicle_number,
+                        voucher.distance_km,
                     ],
                 )
                 for le in voucher.ledger_entries:
