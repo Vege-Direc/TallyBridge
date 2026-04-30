@@ -1,6 +1,7 @@
 """TallyBridge — sync TallyPrime to DuckDB and AI via MCP."""
 
 from tallybridge.cache import TallyCache
+from tallybridge.client import TallyBridge
 from tallybridge.config import TallyBridgeConfig, get_config
 from tallybridge.connection import TallyConnection
 from tallybridge.exceptions import (
@@ -39,15 +40,18 @@ def connect(
     tally_port: int = 9000,
     db_path: str = "tallybridge.duckdb",
     company: str | None = None,
-) -> TallyQuery:
-    """Connect to TallyBridge: sync fresh data from Tally, return TallyQuery.
+) -> TallyBridge:
+    """Connect to TallyBridge: sync, query, and write-back.
 
-    The simplest possible entry point for new users.
+    The simplest possible entry point for new users. Syncs on first call
+    and returns a :class:`TallyBridge` object supporting read, write,
+    and sync operations.
 
-    Example:
+    Example::
+
         import tallybridge
-        q = tallybridge.connect()
-        digest = q.get_daily_digest()
+        tb = tallybridge.connect()
+        digest = tb.get_daily_digest()
         print(f"Today's sales: {digest.total_sales:,.0f}")
 
     Raises:
@@ -61,11 +65,6 @@ def connect(
         db_path=db_path,
         tally_company=company,
     )
-    cache = TallyCache(db_path)
-    cache.initialize()
-    connection = TallyConnection(config)
-    parser = TallyXMLParser()
-    engine = TallySyncEngine(connection, cache, parser)
 
     try:
         loop = asyncio.get_running_loop()
@@ -75,23 +74,24 @@ def connect(
     if loop and loop.is_running():
         import concurrent.futures
 
-        def _run_sync() -> None:
-            asyncio.run(engine.sync_all())
-            asyncio.run(connection.close())
+        def _run_sync() -> TallyBridge:
+            bridge = TallyBridge(config)
+            asyncio.run(bridge.sync())
+            return bridge
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(_run_sync).result()
+            return pool.submit(_run_sync).result()
     else:
-        asyncio.run(engine.sync_all())
-        asyncio.run(connection.close())
-
-    return TallyQuery(cache)
+        bridge = TallyBridge(config)
+        asyncio.run(bridge.sync())
+        return bridge
 
 
 __version__ = "0.1.0"
 __all__ = [
     "connect",
     "__version__",
+    "TallyBridge",
     "TallyBridgeConfig",
     "get_config",
     "TallyConnection",
