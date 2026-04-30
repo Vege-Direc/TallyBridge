@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Added — Phase 12: GST Reports, Multi-Currency, Validation
+
+- **12a**: Add GSTR-1 outward supply report fetching and parsing (`fetch_gstr1()`, `parse_gstr1()`, `GSTR1Result` model)
+- **12b**: Add Godown entity to sync pipeline with cache table (`TallyGodown` model, `mst_godown` table, migration 6)
+- **12c**: Add TallyBridge unified client with read-write and context manager — single object for sync, query, validation, and write-back
+- **12d**: Add pre-write validation layer — `validate_voucher()` and `validate_ledger()` methods check cache before posting; `ValidationResult` model; `validate: bool = True` parameter on `create_voucher()` and `create_ledger()`; raises `TallyDataError` on validation failure
+- **12e**: Add GSTR-2A/2B ITC reconciliation — `GSTR2AClaim` model, `fetch_gstr2a()`, `reconcile_itc()` query method (matches by GSTIN+voucher number with fallback), `reconcile_itc` MCP tool
+- **12f**: Add multi-currency fields to voucher model — `currency`, `forex_amount`, `exchange_rate`, `base_currency_amount` on `TallyVoucher`; `currency`, `forex_amount`, `exchange_rate` on `TallyVoucherEntry`; cache migration 7
+- **12g**: Add GSTR-9 annual return support — `GSTR9Result` and `GSTR9Section` models, `fetch_gstr9()`, `parse_gstr9()` (flush-section pattern), `get_gstr9` MCP tool
+
 ### Added — Phase 11E: HTTP API Bridge
 
 - **11j**: Add `tallybridge serve` CLI command starting a read-only HTTP SQL API bridge using FastAPI. Endpoints: `GET /` (info), `GET /health`, `GET /views` (list BI views), `GET /views/{name}` (query a view), `POST /query` (execute read-only SQL), `GET /tables` (list tables). Includes CORS middleware, SQL injection prevention (keyword blocklist + DuckDB read-only connection), and pagination on view queries. Requires `pip install tallybridge[serve]` for FastAPI/uvicorn

@@ -36,7 +36,7 @@ See [docs/tally-setup.md](docs/tally-setup.md) for full instructions.
 tallybridge sync
 ```
 
-This fetches all ledgers, groups, stock items, vouchers, and more into a local
+This fetches all ledgers, groups, stock items, vouchers, godowns, and more into a local
 `tallybridge.duckdb` file. **You only need TallyPrime running during sync.** After
 that, close TallyPrime — queries work offline against the local database.
 
@@ -107,8 +107,14 @@ q.get_stock_summary()                       # All stock items with quantities
 q.get_low_stock_items(threshold=5)          # Items below threshold
 q.get_stock_aging()                         # How long stock has been sitting
 
+# GST Reports
+q.fetch_gstr1(from_date, to_date)              # GSTR-1 outward supply report
+q.fetch_gstr3b(from_date, to_date)              # GSTR-3B summary return
+q.fetch_gstr9(from_date, to_date)               # GSTR-9 annual return
+q.reconcile_itc(from_date, to_date)             # GSTR-2A ITC reconciliation
+
 # Search
-q.search(query="sharma", limit=10)          # Search ledgers, parties, narrations
+q.search(query="sharma", limit=10)              # Search ledgers, parties, narrations
 ```
 
 ## Configuration
@@ -190,7 +196,46 @@ print(q.search("cash"))
 - **Cache** stores everything in a local DuckDB file — works offline, with content hash drift detection and sync error tracking
 - **Query** reads from the local file — TallyPrime doesn't need to be running
 - **Import** write back to TallyPrime (masters and vouchers) when `TALLYBRIDGE_ALLOW_WRITES=true`
-- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (17 tools)
+- **MCP** exposes the same data to AI assistants via stdio or HTTP transport (20 tools)
+
+## TallyBridge Unified Client
+
+The `TallyBridge` class provides sync, query, validation, and write-back in one object:
+
+```python
+import asyncio
+import tallybridge
+
+async def main():
+    async with tallybridge.TallyBridge() as tb:
+        # Sync data from TallyPrime
+        await tb.sync()
+
+        # Query (proxied to TallyQuery)
+        digest = tb.get_daily_digest()
+        balance = tb.get_ledger_balance("Cash")
+
+        # Pre-write validation
+        v = await tb.validate_voucher(
+            "Sales", "20250101",
+            [{"ledger_name": "Sales", "amount": "-5000"},
+             {"ledger_name": "Cash", "amount": "5000"}],
+        )
+        print(f"Valid: {v.valid}, Errors: {v.errors}")
+
+        # Create with automatic validation
+        await tb.create_ledger("New Customer", "Sundry Debtors")
+        await tb.create_voucher(
+            "Sales", "20250101",
+            [{"ledger_name": "Sales", "amount": "-5000"},
+             {"ledger_name": "Cash", "amount": "5000"}],
+        )
+
+        # Skip validation (e.g. for batch imports)
+        await tb.create_voucher("Sales", "20250101", entries, validate=False)
+
+asyncio.run(main())
+```
 
 ## Import / Write-Back
 
@@ -225,6 +270,36 @@ result = asyncio.run(conn.import_vouchers(xml))
 
 asyncio.run(conn.close())
 ```
+
+## Multi-Currency Vouchers
+
+TallyVoucher and TallyVoucherEntry include optional currency fields for import/export businesses:
+
+```python
+from tallybridge import TallyVoucher, TallyVoucherEntry
+
+v = TallyVoucher(
+    voucher_type="Sales",
+    date="20250101",
+    currency="USD",
+    forex_amount="100.00",
+    exchange_rate="83.50",
+    base_currency_amount="8350.00",
+    entries=[
+        TallyVoucherEntry(
+            ledger_name="Sales",
+            amount="-8350.00",
+            currency="USD",
+            forex_amount="100.00",
+            exchange_rate="83.50",
+        ),
+    ],
+)
+```
+
+Currency fields (`currency`, `forex_amount`, `exchange_rate`, `base_currency_amount`) are
+`None` by default for INR-only vouchers. The sync pipeline automatically stores these
+fields when present in Tally data.
 
 For TallyPrime 7.0+, use JSON import:
 
