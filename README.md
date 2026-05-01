@@ -4,7 +4,7 @@
 
 **Sync TallyPrime to a local database. Query it from Python or AI.**
 
-[![Test](https://github.com/nicholasgriffintn/tallybridge/actions/workflows/test.yml/badge.svg)](https://github.com/nicholasgriffintn/tallybridge/actions/workflows/test.yml)
+[![Test](https://github.com/Vege-Direc/TallyBridge/actions/workflows/test.yml/badge.svg)](https://github.com/Vege-Direc/TallyBridge/actions/workflows/test.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -21,11 +21,12 @@ can query your data in plain English.
 
 - **Offline-first** — TallyPrime only needs to run during sync
 - **Incremental sync** — AlterID-based, only fetches what changed
-- **22 MCP tools** — Query your accounts from Claude, Cursor, or any AI
+- **27 MCP tools** — Query your accounts from Claude, Cursor, or any AI (includes setup diagnostics)
 - **GST compliance** — GSTR-1, GSTR-3B, GSTR-9, ITC reconciliation
 - **Write-back** — Create ledgers and vouchers from Python or AI
 - **BI integration** — Pre-built views for Power BI, Metabase, Superset
 - **Data export** — CSV, Excel, JSON with audit logging
+- **Setup wizard** — Auto-detect TallyPrime and configure interactively
 - **TallyPrime 7.0** — Auto-detects and uses JSON/JSONEx when available
 - **Tally.ERP 9 compatible** — XML fallback for all versions
 
@@ -42,9 +43,11 @@ pip install tallybridge
 ### 2. Enable TallyPrime HTTP Server
 
 1. Open TallyPrime and load your company
-2. Press **F1** → **Settings** → **Connectivity**
+2. Press **F1** → **Help** → **Settings** → **Advanced Configuration** (TallyPrime 7.0+) or **F1** → **Settings** → **Connectivity** (older versions)
 3. Set **TallyPrime acts as** → **Server**, **Port** → **9000**
 4. Save
+
+> **Tip:** Run `tallybridge setup` to auto-detect TallyPrime and configure everything interactively.
 
 <details>
 <summary>Can't find the setting?</summary>
@@ -96,7 +99,7 @@ See [docs/mcp-setup.md](docs/mcp-setup.md) for full details.
 
 ```bash
 # Setup & sync
-tallybridge init                        # Interactive setup wizard
+tallybridge setup                       # Auto-detect TallyPrime and configure
 tallybridge sync                        # Sync data from TallyPrime
 tallybridge sync --full                 # Force full re-sync
 tallybridge sync --watch                # Continuous sync every N minutes
@@ -294,6 +297,21 @@ result = asyncio.run(conn.import_vouchers(xml))
 asyncio.run(conn.close())
 ```
 
+### Import Duplicates Control
+
+When importing, control how TallyPrime handles duplicate records:
+
+```python
+# Combine opening balances on duplicate (default)
+result = asyncio.run(conn.import_masters(xml, import_dups="@@DUPCOMBINE"))
+
+# Modify existing record instead
+result = asyncio.run(conn.import_masters(xml, import_dups="@@DUPMODIFY"))
+
+# Skip if already exists
+result = asyncio.run(conn.import_masters(xml, import_dups="@@DUPIGNORE"))
+```
+
 ---
 
 ## Multi-Currency Vouchers
@@ -350,6 +368,7 @@ Set via environment variables or a `.env` file:
 | `TALLYBRIDGE_STRICT_STATUS` | `false` | Treat STATUS=0 as error |
 | `TALLYBRIDGE_ALLOW_WRITES` | `false` | Enable write-back to TallyPrime |
 | `TALLYBRIDGE_MCP_API_KEY` | *(none)* | Bearer token for MCP HTTP transport |
+| `TALLYBRIDGE_MCP_TRANSPORT` | `stdio` | MCP transport mode: `stdio` or `http` |
 | `TALLYBRIDGE_QUERY_CACHE_TTL` | `300` | Query result cache TTL in seconds |
 | `TALLYBRIDGE_SLOW_QUERY_THRESHOLD` | `1.0` | Log queries slower than this (seconds) |
 | `TALLYBRIDGE_EXPORT_CHUNK_SIZE` | `5000` | Rows per chunk for chunked export |
@@ -396,7 +415,7 @@ See [docs/bi-integration.md](docs/bi-integration.md) for detailed connection gui
 
 ---
 
-## MCP Tools (22 read-only + 3 write = 25 total)
+## MCP Tools (27 read-only + 3 write-back via Python API)
 
 ### Read-Only Tools
 
@@ -427,6 +446,8 @@ See [docs/bi-integration.md](docs/bi-integration.md) for detailed connection gui
 | `get_eway_bill_status` | E-Way Bill status |
 | `export_data` | Export cached data as CSV or JSON |
 | `get_audit_log` | Audit log of write operations |
+| `tally_check_connection` | Test TallyPrime connectivity and version |
+| `tally_setup_guide` | Step-by-step setup instructions |
 
 ### Write Tools (requires `TALLYBRIDGE_ALLOW_WRITES=true`)
 
@@ -475,19 +496,19 @@ TallyBridge auto-detects your Tally version on first sync. See
                            └──────────────────────┘
 ```
 
-1. **Sync** — Pull data from TallyPrime via HTTP (XML or JSON/JSONEx on 7.0+)
-2. **Cache** — Store in local DuckDB with content hash drift detection
-3. **Query** — Read from local file — TallyPrime doesn't need to be running
-4. **Import** — Write back to TallyPrime when `TALLYBRIDGE_ALLOW_WRITES=true`
-5. **MCP** — Expose data to AI assistants via stdio or HTTP (24 tools)
-6. **Export** — CSV, Excel, JSON with audit logging
+ 1. **Sync** — Pull data from TallyPrime via HTTP (XML or JSON/JSONEx on 7.0+)
+ 2. **Cache** — Store in local DuckDB with content hash drift detection
+ 3. **Query** — Read from local file — TallyPrime doesn't need to be running
+ 4. **Import** — Write back to TallyPrime when `TALLYBRIDGE_ALLOW_WRITES=true`
+ 5. **MCP** — Expose data to AI assistants via stdio or HTTP (27 tools, includes setup diagnostics)
+ 6. **Export** — CSV, Excel, JSON with audit logging
 
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/nicholasgriffintn/tallybridge.git
+git clone https://github.com/Vege-Direc/TallyBridge.git
 cd tallybridge
 uv sync --extra dev
 uv run pytest

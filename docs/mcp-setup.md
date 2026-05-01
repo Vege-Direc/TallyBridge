@@ -162,6 +162,13 @@ If the MCP server is configured correctly, Claude will invoke the TallyBridge to
 | `export_data` | Export cached data as CSV or JSON string | `table`, `format`, `columns`, `where`, `limit` |
 | `get_audit_log` | Audit log of write operations | `from_date`, `to_date`, `entity_type`, `operation` |
 
+### Setup & Diagnostics
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `tally_check_connection` | Test TallyPrime connectivity, detect version, list companies | — |
+| `tally_setup_guide` | Version-specific step-by-step TallyPrime HTTP setup instructions | — |
+
 ### Import / Write-Back (requires opt-in)
 
 > **Note:** Write tools are currently available via the Python API
@@ -189,8 +196,9 @@ All HTTP requests must include `Authorization: Bearer your-secret-key`.
 | Problem | Solution |
 |---|---|
 | MCP server not found | Verify `tallybridge-mcp` is on your PATH. Run `tallybridge-mcp --help` to check. |
-| Connection errors | Ensure TallyPrime is running with HTTP server enabled on port 9000. See [tally-setup.md](tally-setup.md). |
+| Connection errors | Ensure TallyPrime is running with HTTP server enabled on port 9000. See [tally-setup.md](tally-setup.md). Ask your AI to run `tally_check_connection` for diagnostics. |
 | Claude cannot see tools | Restart Claude Desktop after config changes. Check `claude_desktop_config.json` syntax. |
 | Permission denied | On macOS/Linux, ensure the command is executable (`chmod +x`). |
 | HTTP auth failures | Verify the `Authorization: Bearer <key>` header matches your `TALLYBRIDGE_MCP_API_KEY`. |
 | Write tools not appearing | Set `TALLYBRIDGE_ALLOW_WRITES=true` in the `env` block. |
+| First-time setup | Ask your AI to run `tally_setup_guide` for step-by-step instructions, or run `tallybridge setup` in your terminal. |

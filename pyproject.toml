@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tallybridge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Connect TallyPrime to DuckDB and AI via MCP"
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["tally", "tallyprime", "accounting", "india", "gst", "mcp", "duckdb"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
@@ -68,10 +68,10 @@ tallybridge = "tallybridge.cli:app"
 tallybridge-mcp = "tallybridge.mcp.sdk_server:main"
 
 [project.urls]
-Homepage = "https://github.com/nicholasgriffintn/tallybridge"
-Documentation = "https://github.com/nicholasgriffintn/tallybridge#readme"
-Repository = "https://github.com/nicholasgriffintn/tallybridge"
-Issues = "https://github.com/nicholasgriffintn/tallybridge/issues"
+Homepage = "https://github.com/Vege-Direc/TallyBridge"
+Documentation = "https://github.com/Vege-Direc/TallyBridge#readme"
+Repository = "https://github.com/Vege-Direc/TallyBridge"
+Issues = "https://github.com/Vege-Direc/TallyBridge/issues"
 
 # -- Ruff -----------------------------------------------------------------------
 

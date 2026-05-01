@@ -653,6 +653,113 @@ async def get_audit_log(
     )
 
 
+@mcp.tool(annotations=_ANNOTATIONS)
+async def tally_check_connection(ctx: _Ctx | None = None) -> Any:
+    """Check if TallyPrime is reachable and return diagnostic info.
+    Tests the HTTP connection, detects TallyPrime version, and lists available
+    companies. Use this to troubleshoot connection issues or verify setup.
+    """
+    config = get_config()
+    from tallybridge.connection import TallyConnection
+
+    conn = TallyConnection(config)
+    try:
+        reachable = await conn.ping()
+    except Exception:
+        reachable = False
+
+    result: dict[str, Any] = {
+        "tally_host": config.tally_host,
+        "tally_port": config.tally_port,
+        "reachable": reachable,
+    }
+
+    if reachable:
+        try:
+            product = await conn.detect_version()
+            result["version"] = product.display_name
+            result["capabilities"] = product.capabilities()
+        except Exception as exc:
+            result["version_error"] = str(exc)
+
+        try:
+            companies = await conn.get_company_list()
+            result["companies"] = companies
+            result["company_count"] = len(companies)
+        except Exception as exc:
+            result["companies_error"] = str(exc)
+    else:
+        result["suggestion"] = (
+            "TallyPrime is not reachable. Make sure TallyPrime is running "
+            "with HTTP server enabled (F1 > Help > Settings > Advanced Configuration "
+            "in TallyPrime 7.0+, or F1 > Settings > Connectivity in older versions)."
+        )
+
+    await conn.close()
+    return _serialize(result)
+
+
+@mcp.tool(annotations=_ANNOTATIONS)
+async def tally_setup_guide(ctx: _Ctx | None = None) -> str:
+    """Step-by-step guide to configure TallyPrime for TallyBridge.
+
+    Use this when a user is having trouble connecting or setting up
+    for the first time. Returns setup instructions covering TallyPrime
+    HTTP configuration, port settings, company loading, and
+    troubleshooting common connection issues.
+    """
+    config = get_config()
+    return (
+        "# TallyPrime Setup Guide for TallyBridge\n"
+        "\n"
+        "## Prerequisites\n"
+        "1. TallyPrime must be running on your computer or network\n"
+        "2. At least one company must be loaded in TallyPrime\n"
+        "3. The HTTP server must be enabled\n"
+        "\n"
+        "## Enable HTTP Server in TallyPrime\n"
+        "\n"
+        "### TallyPrime 7.0+\n"
+        "1. Open TallyPrime\n"
+        "2. Press **F1** (Help) > **Settings** > **Advanced Configuration**\n"
+        "3. Set **TallyPrime acts as** = **Server** (or **Both**)\n"
+        f"4. Set **Port** = **{config.tally_port}** (default: 9000)\n"
+        "5. Press **Accept** to save\n"
+        "\n"
+        "### TallyPrime 6.x and earlier\n"
+        "1. Open TallyPrime\n"
+        "2. Press **F1** > **Settings** > **Connectivity**\n"
+        "3. Set **TallyPrime acts as** = **Server** (or **Both**)\n"
+        f"4. Set **Port** = **{config.tally_port}**\n"
+        "5. Press **Accept** to save\n"
+        "\n"
+        "## Load a Company\n"
+        "A company must be open in TallyPrime for data to be available.\n"
+        "Use **Gateway of Tally** > **Select Company** if no company is loaded.\n"
+        "\n"
+        "## Verify Connection\n"
+        f"Current configuration: Host={config.tally_host}, Port={config.tally_port}\n"
+        "Run `tallybridge doctor` to check connectivity.\n"
+        "Or run `tallybridge setup` for an interactive setup wizard.\n"
+        "\n"
+        "## Common Issues\n"
+        "- **Connection refused**: "
+        "TallyPrime is not running or HTTP server is disabled\n"
+        "- **No data returned**: No company is loaded in TallyPrime\n"
+        "- **Timeout on large queries**: Reduce VOUCHER_BATCH_SIZE (default: 5000)\n"
+        "- **Encoding issues (₹ symbol)**: Set TALLYBRIDGE_TALLY_ENCODING=utf-16\n"
+        "- **TallyPrime 7.0+ features unavailable**: TSS subscription may be expired\n"
+        "\n"
+        "## Quick Start\n"
+        "```bash\n"
+        "pip install tallybridge\n"
+        "tallybridge setup    # Interactive setup wizard\n"
+        "tallybridge sync     # Fetch data from TallyPrime\n"
+        "tallybridge mcp      # Start AI chat server\n"
+        "```"
+    )
+
+
 def main() -> None:
     """Entry point for the tallybridge-mcp console script.
 

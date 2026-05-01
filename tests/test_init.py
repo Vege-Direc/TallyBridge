@@ -54,7 +54,7 @@ def test_connect_passes_config(tmp_path):
 
 
 def test_version_defined():
-    assert tallybridge.__version__ == "0.1.0"
+    assert tallybridge.__version__ == "0.2.0"
 
 
 def test_all_exports():

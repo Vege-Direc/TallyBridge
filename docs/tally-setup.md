@@ -10,7 +10,16 @@ Launch TallyPrime and open the company you want to connect to.
 
 ### Step 2: Enable Connectivity
 
-1. Press **F1** (Help) → **Settings** → **Connectivity**
+**TallyPrime 7.0+:**
+
+1. Press **F1** (Help) → **Settings** → **Advanced Configuration**
+2. Set **TallyPrime acts as** → **Server** (or **Both**)
+3. Set **Port** → **9000** (TallyBridge default)
+4. Accept and save
+
+**TallyPrime 6.x and earlier:**
+
+1. Press **F1** → **Settings** → **Connectivity**
 2. Set **TallyPrime acts as** → **Server** (or **Both**)
 3. Set **Port** → **9000** (TallyBridge default)
 4. Enable **Enable ODBC / Enable HTTP** if present
@@ -22,6 +31,8 @@ Launch TallyPrime and open the company you want to connect to.
 On some TallyPrime versions, press **F12** → **Product & Features** → **Advanced** → check **Enable ODBC/HTTP**. The HTTP server port is then configured under **F1** → **Settings** → **Connectivity**.
 </details>
 
+> **Tip:** Run `tallybridge setup` to auto-detect TallyPrime on common ports and configure everything interactively.
+
 ### Step 3: Verify the Connection
 
 Open a terminal and send a test request:
@@ -29,7 +40,7 @@ Open a terminal and send a test request:
 ```bash
 curl -X POST http://localhost:9000 \
   -H "Content-Type: text/xml" \
-  -d '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export Data</TALLYREQUEST><TYPE>Collection</TYPE><ID>Ping</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="Ping" ISMODIFY="No"><TYPE>Company</TYPE><FETCH>NAME</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+  -d '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>Ping</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="Ping" ISMODIFY="No"><TYPE>Company</TYPE><FETCH>NAME</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
 ```
 
 If Tally is running correctly, you will receive an XML response listing open company names.

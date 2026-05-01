@@ -933,7 +933,7 @@ def setup_mock_routes(httpserver) -> None:
             )
         elif ">Voucher<" in xml_body:
             resp_xml = build_voucher_xml()
-        elif "Import Data" in xml_body:
+        elif "Import" in xml_body and (">All Masters<" in xml_body or "<LEDGER" in xml_body or ">Vouchers<" in xml_body or "<VOUCHER" in xml_body):
             if ">All Masters<" in xml_body or "<LEDGER" in xml_body:
                 resp_xml = (
                     "<ENVELOPE><HEADER><VERSION>1</VERSION>"

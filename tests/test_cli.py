@@ -164,24 +164,39 @@ def test_logs_command() -> None:
     assert "log" in result.output.lower()
 
 
-def test_init_command_declines_running() -> None:
-    result = runner.invoke(app, ["init"], input="n\n")
-    assert result.exit_code == 0
-
-
-def test_init_command_accepts_running() -> None:
+def test_init_command_local_setup() -> None:
     with patch("tallybridge.cli.config_set"):
-        result = runner.invoke(app, ["init"], input="y\n1\ntest.duckdb\n5\n")
-        assert result.exit_code == 0
-        assert "ready" in result.output.lower() or "TallyBridge" in result.output
+        with patch(
+            "tallybridge.cli._detect_tally_port",
+            return_value=9000,
+        ):
+            with patch(
+                "tallybridge.cli._list_companies",
+                return_value=["Test Company"],
+            ):
+                result = runner.invoke(
+                    app, ["init"],
+                    input="1\n\n\ntest.duckdb\n5\n",
+                )
+                assert result.exit_code == 0
+                assert "tallybridge" in result.output.lower()
 
 
-def test_init_command_remote_location() -> None:
+def test_init_command_remote_setup() -> None:
     with patch("tallybridge.cli.config_set"):
-        result = runner.invoke(
-            app, ["init"], input="y\n2\n192.168.1.100\n9001\nremote.duckdb\n10\n"
-        )
-        assert result.exit_code == 0
+        with patch(
+            "tallybridge.cli._detect_tally_port",
+            return_value=9001,
+        ):
+            with patch(
+                "tallybridge.cli._list_companies",
+                return_value=[],
+            ):
+                result = runner.invoke(
+                    app, ["init"],
+                    input="2\n192.168.1.100\nremote.duckdb\n10\n",
+                )
+                assert result.exit_code == 0
 
 
 def test_status_command_with_error() -> None:

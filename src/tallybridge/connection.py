@@ -193,7 +193,10 @@ class TallyConnection:
             raise TallyConnectionError(
                 f"Could not connect to Tally on "
                 f"{self._config.tally_host}:{self._config.tally_port}. "
-                f"Is TallyPrime open? Enable: F1 > Settings > Connectivity > "
+                f"Is TallyPrime open with a company loaded? "
+                f"Enable HTTP server: "
+                f"F1 > Help > Settings > Advanced Configuration (TallyPrime 7.0+) or "
+                f"F1 > Settings > Connectivity (older) > "
                 f"TallyPrime acts as = Server, "
                 f"Port = {self._config.tally_port}.{timeout_hint}"
             ) from exc
@@ -700,7 +703,10 @@ class TallyConnection:
             raise TallyConnectionError(
                 f"Could not connect to Tally on "
                 f"{self._config.tally_host}:{self._config.tally_port}. "
-                f"Is TallyPrime open? Enable: F1 > Settings > Connectivity > "
+                f"Is TallyPrime open with a company loaded? "
+                f"Enable HTTP server: "
+                f"F1 > Help > Settings > Advanced Configuration (TallyPrime 7.0+) or "
+                f"F1 > Settings > Connectivity (older) > "
                 f"TallyPrime acts as = Server, "
                 f"Port = {self._config.tally_port}.{timeout_hint}"
             ) from exc
@@ -753,10 +759,13 @@ class TallyConnection:
         xml_data: str,
         company: str | None = None,
         action: str = "Create",
+        import_dups: str = "@@DUPCOMBINE",
     ) -> "ImportResult":
         """Import master data (ledgers, groups, stock items, etc.) into TallyPrime.
 
-        Sends an XML import request via ``TALLYREQUEST=Import Data``.
+        Sends an XML import request per TallyHelp docs format:
+        ``TALLYREQUEST=Import``, ``TYPE=Data``, ``ID=All Masters``.
+
         Requires ``TALLYBRIDGE_ALLOW_WRITES=true`` in the environment.
 
         Args:
@@ -765,6 +774,10 @@ class TallyConnection:
             company: Target company name. If ``None``, uses the active company.
             action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
                 Defaults to ``"Create"``.
+            import_dups: Duplicate handling formula. Options:
+                ``"@@DUPCOMBINE"`` (combine, default), ``"@@DUPMODIFY"`` (modify),
+                ``"@@DUPIGNORE"`` (ignore), or ``"@@DUPIGNORECOMBINE"`` (ignore
+                opening balance but combine others).
 
         Returns:
             An ``ImportResult`` with created/altered/deleted/error counts.
@@ -776,17 +789,25 @@ class TallyConnection:
         """
         self._check_writes_allowed()
 
+        static_vars = f"<IMPORTDUPS>{html.escape(import_dups, quote=True)}</IMPORTDUPS>"
+        if company:
+            static_vars += (
+                f"<SVCURRENTCOMPANY>"
+                f"{html.escape(company, quote=True)}"
+                f"</SVCURRENTCOMPANY>"
+            )
+
         envelope = (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Import</TALLYREQUEST>"
+            "<TYPE>Data</TYPE>"
+            "<ID>All Masters</ID>"
             "</HEADER>"
-            "<BODY><IMPORTDATA>"
-            "<REQUESTDESC><REPORTNAME>All Masters</REPORTNAME></REQUESTDESC>"
-            f"<REQUESTDATA><TALLYMESSAGE>"
-            f"{xml_data}"
-            f"</TALLYMESSAGE></REQUESTDATA>"
-            "</IMPORTDATA></BODY></ENVELOPE>"
+            "<BODY>"
+            f"<DESC><STATICVARIABLES>{static_vars}</STATICVARIABLES></DESC>"
+            f"<DATA><TALLYMESSAGE>{xml_data}</TALLYMESSAGE></DATA>"
+            "</BODY></ENVELOPE>"
         )
 
         response = await self.post_xml(envelope)
@@ -797,10 +818,13 @@ class TallyConnection:
         xml_data: str,
         company: str | None = None,
         action: str = "Create",
+        import_dups: str = "@@DUPCOMBINE",
     ) -> "ImportResult":
         """Import voucher data (sales, purchases, receipts, etc.) into TallyPrime.
 
-        Sends an XML import request via ``TALLYREQUEST=Import Data``.
+        Sends an XML import request per TallyHelp docs format:
+        ``TALLYREQUEST=Import``, ``TYPE=Data``, ``ID=Vouchers``.
+
         Requires ``TALLYBRIDGE_ALLOW_WRITES=true`` in the environment.
 
         Args:
@@ -809,23 +833,34 @@ class TallyConnection:
             company: Target company name. If ``None``, uses the active company.
             action: Import action — ``"Create"``, ``"Alter"``, ``"Delete"``.
                 Defaults to ``"Create"``.
+            import_dups: Duplicate handling formula. Options:
+                ``"@@DUPCOMBINE"`` (combine, default), ``"@@DUPMODIFY"`` (modify),
+                ``"@@DUPIGNORE"`` (ignore).
 
         Returns:
             An ``ImportResult`` with created/altered/deleted/error counts.
         """
         self._check_writes_allowed()
 
+        static_vars = f"<IMPORTDUPS>{html.escape(import_dups, quote=True)}</IMPORTDUPS>"
+        if company:
+            static_vars += (
+                f"<SVCURRENTCOMPANY>"
+                f"{html.escape(company, quote=True)}"
+                f"</SVCURRENTCOMPANY>"
+            )
+
         envelope = (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Import</TALLYREQUEST>"
+            "<TYPE>Data</TYPE>"
+            "<ID>Vouchers</ID>"
             "</HEADER>"
-            "<BODY><IMPORTDATA>"
-            "<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>"
-            f"<REQUESTDATA><TALLYMESSAGE>"
-            f"{xml_data}"
-            f"</TALLYMESSAGE></REQUESTDATA>"
-            "</IMPORTDATA></BODY></ENVELOPE>"
+            "<BODY>"
+            f"<DESC><STATICVARIABLES>{static_vars}</STATICVARIABLES></DESC>"
+            f"<DATA><TALLYMESSAGE>{xml_data}</TALLYMESSAGE></DATA>"
+            "</BODY></ENVELOPE>"
         )
 
         response = await self.post_xml(envelope)
@@ -906,25 +941,31 @@ class TallyConnection:
         report_name: str,
         xml_data: str,
         company: str | None = None,
+        import_dups: str = "@@DUPCOMBINE",
     ) -> str:
-        """Build XML envelope for a TallyPrime import request."""
-        safe_company = html.escape(company, quote=True) if company else ""
-        static_vars = ""
-        if safe_company:
-            static_vars = f"<SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>"
+        """Build XML envelope for a TallyPrime import request.
+
+        Uses official TallyHelp format: TALLYREQUEST=Import, TYPE=Data,
+        ID=<report_name>, with DESC/STATICVARIABLES and DATA/TALLYMESSAGE.
+        """
+        static_vars = f"<IMPORTDUPS>{html.escape(import_dups, quote=True)}</IMPORTDUPS>"
+        if company:
+            static_vars += (
+                f"<SVCURRENTCOMPANY>"
+                f"{html.escape(company, quote=True)}"
+                f"</SVCURRENTCOMPANY>"
+            )
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Import Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Import</TALLYREQUEST>"
+            "<TYPE>Data</TYPE>"
+            f"<ID>{html.escape(report_name, quote=True)}</ID>"
             "</HEADER>"
-            "<BODY><IMPORTDATA>"
-            f"<REQUESTDESC><REPORTNAME>{html.escape(report_name, quote=True)}"
-            f"</REPORTNAME></REQUESTDESC>"
-            f"<REQUESTDATA><TALLYMESSAGE>"
-            f"{xml_data}"
-            f"</TALLYMESSAGE></REQUESTDATA>"
-            f"{static_vars}"
-            "</IMPORTDATA></BODY></ENVELOPE>"
+            "<BODY>"
+            f"<DESC><STATICVARIABLES>{static_vars}</STATICVARIABLES></DESC>"
+            f"<DATA><TALLYMESSAGE>{xml_data}</TALLYMESSAGE></DATA>"
+            "</BODY></ENVELOPE>"
         )
 
     @staticmethod
@@ -1288,7 +1329,7 @@ class TallyConnection:
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Export</TALLYREQUEST>"
             "<TYPE>Collection</TYPE><ID>Ping</ID></HEADER>"
             "<BODY><DESC><STATICVARIABLES>"
             "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
@@ -1330,7 +1371,7 @@ class TallyConnection:
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Export</TALLYREQUEST>"
             f"<TYPE>Collection</TYPE><ID>{safe_collection}</ID></HEADER>"
             "<BODY><DESC><STATICVARIABLES>"
             f"{static_vars}"
@@ -1351,7 +1392,15 @@ class TallyConnection:
         guid: str | None = None,
         company: str | None = None,
     ) -> str:
-        """Build XML for a single-object export (TYPE=Object)."""
+        """Build XML for a single-object export (TYPE=Object).
+
+        Per TallyHelp docs, Object exports use:
+          <TYPE>Object</TYPE><SUBTYPE>Ledger</SUBTYPE>
+          <ID TYPE="Name">Ledger Name</ID>
+        or:
+          <TYPE>Object</TYPE><SUBTYPE>Ledger</SUBTYPE>
+          <ID TYPE="GUID">guid-string</ID>
+        """
         safe_type = html.escape(tally_type, quote=True)
         static_vars = "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
         if company:
@@ -1361,20 +1410,24 @@ class TallyConnection:
                 f"</SVCURRENTCOMPANY>"
             )
 
-        object_id = ""
+        id_attr = ""
+        id_value = ""
         if name:
-            object_id = html.escape(name, quote=True)
+            id_attr = ' TYPE="Name"'
+            id_value = html.escape(name, quote=True)
         elif guid:
-            object_id = html.escape(guid, quote=True)
+            id_attr = ' TYPE="GUID"'
+            id_value = html.escape(guid, quote=True)
 
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
-            f"<TYPE>Object</TYPE><ID>{safe_type}</ID></HEADER>"
+            "<TALLYREQUEST>Export</TALLYREQUEST>"
+            f"<TYPE>Object</TYPE>"
+            f"<SUBTYPE>{safe_type}</SUBTYPE>"
+            f"<ID{id_attr}>{id_value}</ID></HEADER>"
             "<BODY><DESC><STATICVARIABLES>"
             f"{static_vars}"
-            f"<SVOBJECTNAME>{object_id}</SVOBJECTNAME>"
             "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
         )
 
@@ -1404,7 +1457,7 @@ class TallyConnection:
         return (
             "<ENVELOPE>"
             "<HEADER><VERSION>1</VERSION>"
-            "<TALLYREQUEST>Export Data</TALLYREQUEST>"
+            "<TALLYREQUEST>Export</TALLYREQUEST>"
             f"<TYPE>Data</TYPE><ID>{safe_report}</ID></HEADER>"
             "<BODY><DESC><STATICVARIABLES>"
             f"{static_vars}"

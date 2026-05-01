@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — TallyHelp Official Docs Compliance & UX
+
+- **XML format**: Fix `<TALLYREQUEST>` values to match official TallyHelp documentation — changed from `"Export Data"` / `"Import Data"` to `"Export"` / `"Import"` across all XML builders (ping, collection, object, report, import). The previous values worked due to Tally's lenient parsing but were not per spec.
+- **Import XML structure**: Restructured `import_masters()` and `import_vouchers()` to match official TallyHelp Case Study format — added `<TYPE>Data</TYPE>` and `<ID>All Masters</ID>` / `<ID>Vouchers</ID>` to header; replaced `<IMPORTDATA><REQUESTDESC><REQUESTDATA>` body structure with `<DESC><STATICVARIABLES>` + `<DATA><TALLYMESSAGE>` per current docs.
+- **Import duplicates control**: Added `import_dups` parameter to `import_masters()` and `import_vouchers()` supporting `@@DUPCOMBINE` (default), `@@DUPMODIFY`, `@@DUPIGNORE`, `@@DUPIGNORECOMBINE` as documented in TallyHelp import reference.
+- **Object export format**: Fixed `_build_object_xml()` to use official TallyHelp format — added `<SUBTYPE>` tag and changed object identifier from `<SVOBJECTNAME>` to `<ID TYPE="Name">` / `<ID TYPE="GUID">` per docs.
+- **Error messages**: Updated connection error messages to include both TallyPrime 7.0+ (`F1 > Help > Settings > Advanced Configuration`) and older (`F1 > Settings > Connectivity`) navigation paths.
+- **`tallybridge setup` command**: New auto-detection setup wizard that scans ports 9000/9001/9090 for TallyPrime, lists available companies, and writes configuration to `.env`. Replaces the simpler `init` command (which now aliases to `setup`).
+- **`tally_check_connection` MCP tool**: New tool that tests TallyPrime connectivity, detects version, lists companies, and provides setup suggestions on failure — designed for AI assistants to troubleshoot connection issues.
+- **`tally_setup_guide` MCP tool**: New tool that returns version-specific step-by-step TallyPrime HTTP configuration instructions — designed for AI assistants helping users with first-time setup.
+- **Mock server**: Updated test mock to match new import XML format (`"Import"` instead of `"Import Data"`).
+
 ### Added — Phase 13: E-Invoice, Export, Audit, Reports, Performance
 
 - **13a**: Add e-invoice and e-Way Bill fields to `TallyVoucher` model — `irn`, `irn_date`, `eway_bill_number`, `eway_bill_date`, `eway_bill_valid_till`, `transporter_name`, `vehicle_number`, `distance_in_km`; cache migration 8

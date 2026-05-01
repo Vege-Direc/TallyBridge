@@ -371,38 +371,8 @@ def logs() -> None:
 
 @app.command()
 def init() -> None:
-    """Interactive setup wizard."""
-    console.print(
-        "[bold]Welcome to TallyBridge![/bold] Let's connect to your TallyPrime."
-    )
-
-    running = typer.confirm("Is TallyPrime running on this computer?", default=True)
-    if not running:
-        console.print("Please start TallyPrime and run this wizard again.")
-        raise typer.Exit(0)
-
-    location = typer.prompt(
-        "Where is TallyPrime? (1 = This computer, 2 = Another computer)",
-        type=int,
-    )
-    if location == 2:
-        host = typer.prompt("  Host/IP address", default="localhost")
-        port = typer.prompt("  Port", default=9000, type=int)
-    else:
-        host = "localhost"
-        port = 9000
-
-    db_path = typer.prompt("Where to store data?", default="tallybridge.duckdb")
-    freq = typer.prompt("How often to sync (minutes)?", default=5, type=int)
-
-    console.print("Writing configuration...")
-    config_set("TALLY_HOST", host)
-    config_set("TALLY_PORT", str(port))
-    config_set("DB_PATH", db_path)
-    config_set("SYNC_FREQUENCY_MINUTES", str(freq))
-
-    console.print("[bold green]TallyBridge is ready![/bold green]")
-    console.print("Run [bold]tallybridge sync[/bold] to fetch data from TallyPrime.")
+    """Interactive setup wizard (alias for 'setup')."""
+    setup()
 
 
 async def _ping_tally(cfg: TallyBridgeConfig) -> bool:
@@ -412,6 +382,119 @@ async def _ping_tally(cfg: TallyBridgeConfig) -> bool:
     result = await conn.ping()
     await conn.close()
     return result
+
+
+async def _detect_tally_port(host: str, ports: list[int]) -> int | None:
+    """Try connecting to Tally on each port, return first that responds."""
+    from tallybridge.connection import TallyConnection
+
+    for port in ports:
+        test_cfg = TallyBridgeConfig(tally_host=host, tally_port=port)
+        try:
+            conn = TallyConnection(test_cfg)
+            ok = await conn.ping()
+            await conn.close()
+            if ok:
+                return port
+        except Exception:
+            continue
+    return None
+
+
+async def _list_companies(cfg: TallyBridgeConfig) -> list[str]:
+    from tallybridge.connection import TallyConnection
+
+    conn = TallyConnection(cfg)
+    companies = await conn.get_company_list()
+    await conn.close()
+    return companies
+
+
+@app.command()
+def setup() -> None:
+    """Auto-detect TallyPrime and configure TallyBridge.
+
+    Scans common ports (9000, 9001) for a running TallyPrime HTTP server,
+    lists available companies, and writes configuration to .env.
+    """
+    console.print("[bold]TallyBridge Setup Wizard[/bold]")
+    console.print()
+
+    location = typer.prompt(
+        "Where is TallyPrime? (1 = This computer, 2 = Another computer)",
+        type=int,
+        default=1,
+    )
+    host = "localhost"
+    if location == 2:
+        host = typer.prompt("  Host/IP address", default="192.168.1.100")
+
+    console.print()
+    with console.status("Scanning for TallyPrime..."):
+        port = asyncio.run(_detect_tally_port(host, [9000, 9001, 9090]))
+
+    if port is None:
+        console.print(
+            "[red]Could not detect TallyPrime on common ports (9000, 9001, 9090).[/red]"
+        )
+        console.print()
+        console.print("Make sure TallyPrime is running with HTTP server enabled:")
+        console.print(
+            "  [bold]TallyPrime 7.0+:[/bold] "
+            "F1 > Help > Settings > Advanced Configuration"
+        )
+        console.print("  [bold]Older versions:[/bold] F1 > Settings > Connectivity")
+        console.print("  Set 'TallyPrime acts as' = Server, and note the port number.")
+        console.print()
+        port = typer.prompt("Enter TallyPrime port manually", default=9000, type=int)
+
+    console.print(f"[green]Found TallyPrime on {host}:{port}[/green]")
+
+    companies: list[str] = []
+    try:
+        with console.status("Loading companies..."):
+            cfg = TallyBridgeConfig(tally_host=host, tally_port=port)
+            companies = asyncio.run(_list_companies(cfg))
+    except Exception:
+        pass
+
+    company = ""
+    if companies:
+        console.print(f"\nAvailable companies: {', '.join(companies)}")
+        company = typer.prompt(
+            "Select company (or press Enter for active company)",
+            default="",
+        )
+    else:
+        console.print("[yellow]No companies loaded in TallyPrime.[/yellow]")
+        console.print("Open a company in TallyPrime first, then re-run setup.")
+
+    db_path = typer.prompt("DuckDB data file path", default="tallybridge.duckdb")
+    freq = typer.prompt("Sync frequency (minutes)", default=5, type=int)
+
+    console.print()
+    console.print("Writing configuration to .env...")
+    config_set("TALLY_HOST", host)
+    config_set("TALLY_PORT", str(port))
+    if company:
+        config_set("TALLY_COMPANY", company)
+    config_set("DB_PATH", db_path)
+    config_set("SYNC_FREQUENCY_MINUTES", str(freq))
+
+    console.print()
+    console.print("[bold green]Setup complete![/bold green]")
+    console.print()
+    console.print("Next steps:")
+    console.print(
+        "  1. Run [bold]tallybridge sync[/bold] to fetch data from TallyPrime"
+    )
+    console.print(
+        "  2. Run [bold]tallybridge mcp[/bold] to start the AI chat server"
+    )
+    console.print(
+        "  3. Run [bold]tallybridge serve[/bold] "
+        "to start the HTTP API for BI tools"
+    )
 
 
 @export_app.command("csv")
